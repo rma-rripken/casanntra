@@ -1,19 +1,33 @@
-name: env_casanntra
+name: casanntra
 channels:
   - conda-forge
-  - defaults
+  - nodefaults
+  - cadwr-dms
 dependencies:
-  - python<=3.11
+  - python==3.9 # 3.9 is max for tensorflow 2.7.4
   - pip
   - ipykernel
-  - jupyter_bokeh
-  # add dependencies from setup.py here
-  # - pandas # ...
-  # dev dependencies
-  # - pytest
-  # - pytest-cov
-  # - black
-  # setup development environment by 
-  # conda activate env_casanntra
-  # pip install -e .
+  #- tensorflow==2.7.4               #Install after using pip. See commented command below
+  - vtools3>=3.7.5
+  - dms-datastore>=0.1.0 
+  - numpy>=1.20,<2  
+  - pandas>=2    
+  - scikit-learn
+  - keras
+  #- keras-tuner                     # Install afterwards using pip. See commented command below
+  - tabulate
+  - pandas
+  - openpyxl
+  - xlrd # [version='>=1.0.0']
+  - statsmodels
+  - bokeh
+  - hvplot
+  - holoviews
+  - panel
+  - pyhecdss
+  - ipykernel
+  - openpyxl==3.1.0
+
+# pip install --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org tensorflow==2.7.4
+# pip install --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org keras-tuner
 
