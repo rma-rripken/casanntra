@@ -7,7 +7,8 @@ import pytest  # Optional, but recommended for pytest usage
 
 def stack_inputs(list_of_inputs,dim_order="lstm"):
     """ Concatenates list of individual features (sac, exports, ...) to LSTM dim conventions
-        the resulting data will have dimension (nbatch, ntime, nfeature).
+        the resulting data will have dimension (nbatch, ntime, nfeature). 
+        
         Args:
              list_of_inputs : list[tf.keras.Layer]
         Returns:
