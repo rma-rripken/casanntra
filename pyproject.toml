@@ -55,7 +55,8 @@ omit = [
 universal = true
 
 [tool.setuptools]
-package-dir = {"" = "src"}
+package-dir = {"" = "casanntra"}
+py-modules = ["casanntra"]
 
 [tool.setuptools.package-data]
 "*" = ["*.*"]
