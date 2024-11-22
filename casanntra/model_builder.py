@@ -282,7 +282,7 @@ class ModelBuilder(object):
 
 
 
-    def create_antecedent_inputs(self, df, ndays=-1, window_length=-1, nwindows=-1):
+    def create_antecedent_inputs(self, df, ndays=-1, window_length=-1, nwindows=-1, reverse=False):
         """
         Expands a dataframe to include lagged data.
         Each column of the input dataframe is expanded to:
@@ -301,33 +301,38 @@ class ModelBuilder(object):
 
         """
         
-        if ndays<0: 
+        if ndays < 0: 
             ndays = self.ndays
         if nwindows < 0:
             nwindows = self.nwindows
         if window_length < 0:
             window_length = self.window_length
 
-        preserve_cols = ["datetime","case","fold"] if "datetime" in df.columns else ["case","fold"]
+        preserve_cols = ["datetime", "case", "fold"] if "datetime" in df.columns else ["case", "fold"]
         df2 = df[preserve_cols].copy()
         df = df.drop(preserve_cols, axis=1)
         orig_index = df.index
 
-        arr1=[df.shift(n) for n in range(ndays)]
+        if not reverse and nwindows > 0:
+            raise NotImplementedError("Not Implemented.")
+
+        if reverse:
+            arr1 = [df.shift(n) for n in range(ndays)]
+        else:
+            arr1 = [df.shift(n) for n in reversed(range(ndays))]
+
         if nwindows > 0:
-            #dfr=df.rolling(window=str(window_length)+'d',min_periods=window_length).mean()
-            #arr2=[dfr.shift(periods=(window_length*n+ndays),freq='d') for n in range(nwindows)]      
-            dfr=df.rolling(window=window_length,min_periods=window_length).mean()
-            arr2=[dfr.shift(window_length*n+ndays) for n in range(nwindows)]                    
+            dfr = df.rolling(window=window_length, min_periods=window_length).mean()
+            arr2 = [dfr.shift(window_length * n + ndays) for n in range(nwindows)]                    
         else:
             arr2 = []
 
-        df_x=pd.concat(arr1+arr2,axis=1).dropna()# nsamples, nfeatures
-    
+        df_x = pd.concat(arr1 + arr2, axis=1).dropna()  # nsamples, nfeatures
+
 
         # Adjust column names
         new_columns = [] #preserve_cols
-        
+
         for n in range(ndays):
             for col in df.columns:
                 if col not in preserve_cols:
@@ -339,7 +344,7 @@ class ModelBuilder(object):
 
         df_x.columns = new_columns
         
-        df_x = df2.join(df_x,how="right")
+        df_x = df2.join(df_x, how="right")
         return df_x
 
 
