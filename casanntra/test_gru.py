@@ -9,7 +9,7 @@ def test_xvalid_gru():
     input_names = [ "sac_flow","exports","sjr_flow","cu_flow","sf_tidal_energy","dcc","smscg"]
     output_names = ["x2","pct", "mal", "cse","anh","emm2","srv","rsl","oh4","trp","dsj","hll","bdl"]
     output_names = ["x2","mal","cse","emm2","tms","jer","rsl","bdl","oh4","srv"]
-    output_names = ["x2","mal","nsl2","bdl","cse","emm2","tms","jer","sal","rsl","oh4"]
+    output_names = ["x2","mal","nsl2","bdl","cse","emm2","tms","jer","sal","bac","oh4"]
     builder = GRUBuilder(input_names=input_names,output_names=output_names,ndays=80)
 
 
@@ -30,8 +30,8 @@ def test_xvalid_gru():
             df_out.loc[:,col] = df_out.loc[:,col]/1000.
 
 
-    plot_locs = ["x2","cse","emm2","jer","bdl","sal","rsl"]
-    xvalid_fit(df_in,df_out,builder,nepochs=50,plot_folds="all",plot_locs=plot_locs,out_prefix="gru")
+    plot_locs = ["x2","cse","emm2","jer","bdl","sal","bac"]
+    xvalid_fit(df_in,df_out,builder,nepochs=50,plot_folds="all",plot_locs=plot_locs,out_prefix="output/gru1")
 
 if __name__ == "__main__":
    test_xvalid_gru()

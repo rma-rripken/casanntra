@@ -66,7 +66,13 @@ def xvalid_fit(df_in,df_out,builder,nepochs=80,plot_folds=[],plot_locs=["cse","b
        and then evaluating the witheld data
     """
 
+    bad_plot_loc = [x for x in plot_locs if x not in builder.output_names]
+    if len(bad_plot_loc) > 0:
+        raise ValueError(f"Some plot locations are not in the output: {bad_plot_loc}")
+
     df_out.to_csv(f"{out_prefix}_xvalid_ref_out.csv",float_format="%.3f",date_format="%Y-%m=%dT%H:%M",header=True,index=True)
+
+
 
     # This constructs inputs with antecedent/lagged values, keeping the cases separate 
     # This only makes sense for the variables that are ANN predictors, as determined by input_names
