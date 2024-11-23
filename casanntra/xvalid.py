@@ -1,5 +1,4 @@
-from read_data import read_data
-from model_builder import *
+from casanntra.model_builder import *
 import matplotlib.pyplot as plt
 
 

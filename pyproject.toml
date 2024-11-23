@@ -36,7 +36,16 @@ test = [
 
 
 [project.urls]
-repository = "https://github.com/water-e/casanntra"
+repository = "https://github.com/CADWRDeltaModeling/casanntra"
+
+
+
+
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["casanntra"]
+
 
 [tool.coverage.report]
 exclude_lines = [
@@ -54,12 +63,6 @@ omit = [
 [tool.distutils.bdist_wheel]
 universal = true
 
-[tool.setuptools]
-package-dir = {"" = "casanntra"}
-py-modules = ["casanntra"]
-
-[tool.setuptools.package-data]
-"*" = ["*.*"]
 
 [tool.versioneer]
 VCS = "git"

@@ -1,6 +1,6 @@
-from read_data import read_data
-from model_builder import *
-from xvalid import xvalid_fit
+from casanntra.read_data import read_data
+from casanntra.model_builder import *
+from casanntra.xvalid import xvalid_fit
 
 
 class MLPBuilder68(ModelBuilder):

@@ -1,17 +1,14 @@
-from read_data import read_data
-from model_builder import *
-from xvalid import xvalid_fit
+from casanntra.read_data import read_data
+from casanntra.model_builder import *
+from casanntra.xvalid import xvalid_fit
 
 
 
-class GRUBuilder(ModelBuilder):
+class GRUBuilder2(GRUModelBuilder):
 
     def __init__(self,input_names,output_names,ndays):
-        super().__init__(input_names,output_names)
-        self.ntime = ndays
-        self.ndays = ndays
-        self.nwindows = 0
-        self.window_length = 0
+        super().__init__(input_names,output_names,ndays)
+        self.reverse_time_inputs = False
 
     def build_model(self,input_layers, input_data):
 
@@ -62,12 +59,12 @@ class GRUBuilder(ModelBuilder):
 
 def test_xvalid_gru():
 
-    input_names = [ "sac_flow","exports","sjr_flow","cu_flow","sf_tidal_energy","dcc","smscg"]
-    output_names = ["x2","pct", "mal", "cse","anh","emm2","srv","rsl","oh4","trp","dsj","hll","bdl"]
+    input_names = [ "sac_flow","exports","sjr_flow","cu_flow","sf_tidal_energy","sf_tidal_filter","dcc","smscg"]
+    #output_names = ["x2","pct", "mal", "cse","anh","emm2","srv","rsl","oh4","trp","dsj","hll","bdl"]
     output_names = ["x2","mal","nsl2","bdl","cse","emm2","tms","anh","jer","sal","bac","rsl","oh4"]
     plot_locs = ["x2","cse","emm2","jer","bdl","sal","bac"]
 
-    builder = GRUBuilder(input_names=input_names,output_names=output_names,ndays=80)
+    builder = GRUBuilder2(input_names=input_names,output_names=output_names,ndays=80)
 
 
     fpattern = "schism_base_*.csv"

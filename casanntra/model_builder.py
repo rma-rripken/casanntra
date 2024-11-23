@@ -1,5 +1,5 @@
 import pandas as pd
-from read_data import read_data
+from casanntra.read_data import read_data
 
 import numpy as np
 import tensorflow as tf
