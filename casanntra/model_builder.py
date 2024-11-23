@@ -206,15 +206,40 @@ class ModelBuilder(object):
         raise NotImplementedError("Must be implemented")
     
 
-    def calc_antecedent_preserve_cases(self, df, ndays=-1, nwindows=-1, window_length=-1):
+    def calc_antecedent_preserve_cases(self, df, ndays=-1, nwindows=-1, window_length=-1,reverse=None):
         """
         Calculates lags for data with multiple cases so that dates alone may not be unique and lags can't be calculated naively by shifting rows
         Input df must have a "case" columns
+        
+        Parameters
+        ----------
+        df : DataFrame
+            A dataframe that has a 'datetime' and 'cases' column and for which datetime,cases are a unique key
+        
+        ndays : int
+            Number of individual day lags
+
+        nwindows: int
+            Number of aggregated windows of days, which will start preceding ndays
+        
+        window_length : int
+            Duration of days of the windows
+
+        reverse : bool
+            Whether to return the lags in backward looking order starting with "now". The default for LSTM is no, 
+        since this is part of the LSTM/GRU architecture. For the CalSim MLPs this is customarily True. The method
+        currently raises an error if nwindows > 0 and reverse=False because this isn't plumbed out
         """
 
         if not "case" in df.columns:
             raise ValueError("No cases column")
         
+        if reverse is None:
+            reverse = self.reverse_time_inputs
+
+        if not reverse and nwindows>0:
+            raise NotImplementedError("Not implmented for non-reverse plus aggregation windows.")
+
         if ndays<0: 
             ndays = self.ndays
         if nwindows < 0:
@@ -241,7 +266,7 @@ class ModelBuilder(object):
         sub_df['index_bounds'] = pd.cut(sub_df.index,bins=nbin,labels=False)
         return sub_df.index_bounds
 
-    def xvalid_time_folds(self, data, target_fold_len='180d',split_in_out=True):
+    def xvalid_time_folds(self, data, target_fold_len='180d',split_in_out=True, reverse=False):
         """ Calculates cross-validation folds for datframe data that assume there are cases and that each 
             case is divided approximately into chunks of length target_fold_len
 
@@ -251,8 +276,16 @@ class ModelBuilder(object):
             data : pd.DataFrame
                 An incoming dataframe that has cases and dates. Within a case, dates are unique and monotone
 
-            target_fold_len : str 
-                A time delta or string that can be parsed to one
+            target_fold_len: pandas freq like '180d'
+                A length, typically smaller than the cases, that will be used to create smaller xvalidation folds. For
+            instance, the cases might be up to 2 years long and target_fold_len='180d'.
+
+            split_in_out: bold
+                Whether to return input and output separately. Helps reduce bookkeeping
+
+            reverse: bool 
+                Whether to return lags in reverse chronicalogical order, something the CalSim models do 
+
         """
         data = data.copy()
         if isinstance(target_fold_len,str):
@@ -361,6 +394,7 @@ class GRUBuilder(ModelBuilder):
         self.ndays = ndays
         self.nwindows = 0
         self.window_length = 0
+        self.reverse_time_inputs = False
 
     def build_model(self,input_layers, input_data):
 
@@ -412,6 +446,7 @@ class MLPBuilder(ModelBuilder):
         self.nwindows = nwindows
         self.window_length = window_length
         self.ntime = ndays + nwindows
+        self.reverse_time_inputs = True
 
     def build_model(self,input_layers, input_data):
         """ Builds the standard CalSIM ANN
