@@ -39,7 +39,7 @@ class GRUBuilder1(ModelBuilder):
         return ann
 
 
-    def fit_model(self,ann,fit_input,fit_output,test_input,test_output,nepochs=200):  # ,tcb):
+    def fit_model(self,ann,fit_input,fit_output,test_input,test_output,nepochs=80):  # ,tcb):
         history = ann.fit(
             fit_input,
             fit_output,
@@ -57,10 +57,10 @@ class GRUBuilder1(ModelBuilder):
 def test_xvalid_gru():
 
     input_names = [ "sac_flow","exports","sjr_flow","cu_flow","sf_tidal_energy","sf_tidal_filter","dcc","smscg"]
-    output_names = ["x2","pct", "mal", "cse","anh","emm2","srv","rsl","oh4","trp","dsj","hll","bdl"]
-    output_names = ["x2","mal","cse","emm2","tms","jer","rsl","bdl","oh4","srv"]
+    #output_names = ["x2","pct", "mal", "cse","anh","emm2","srv","rsl","oh4","trp","dsj","hll","bdl"]
+    #output_names = ["x2","mal","cse","emm2","tms","jer","rsl","bdl","oh4","srv"]
     output_names = ["x2","mal","nsl2","bdl","cse","emm2","tms","jer","sal","bac","oh4"]
-    builder = GRUBuilder(input_names=input_names,output_names=output_names,ndays=80)
+    builder = GRUBuilder1(input_names=input_names,output_names=output_names,ndays=80)
 
 
     fpattern = "schism_base_*.csv"

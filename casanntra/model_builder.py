@@ -237,7 +237,7 @@ class ModelBuilder(object):
         if reverse is None:
             reverse = self.reverse_time_inputs
 
-        if not reverse and nwindows>0:
+        if (not reverse) and (nwindows>0):
             raise NotImplementedError("Not implmented for non-reverse plus aggregation windows.")
 
         if ndays<0: 
@@ -315,7 +315,7 @@ class ModelBuilder(object):
 
 
 
-    def create_antecedent_inputs(self, df, ndays=-1, window_length=-1, nwindows=-1, reverse=False):
+    def create_antecedent_inputs(self, df, ndays=-1, window_length=-1, nwindows=-1, reverse=None):
         """
         Expands a dataframe to include lagged data.
         Each column of the input dataframe is expanded to:
@@ -341,12 +341,17 @@ class ModelBuilder(object):
         if window_length < 0:
             window_length = self.window_length
 
-        preserve_cols = ["datetime", "case", "fold"] if "datetime" in df.columns else ["case", "fold"]
+        preserve_cols = [x for x in ["datetime", "case", "fold"] if x in df.columns]
         df2 = df[preserve_cols].copy()
         df = df.drop(preserve_cols, axis=1)
         orig_index = df.index
 
+        if reverse is None: 
+            reverse = self.reverse_time_inputs
+
         if not reverse and nwindows > 0:
+            print(reverse)
+            print(nwindows)
             raise NotImplementedError("Not Implemented.")
 
         if reverse:
@@ -401,9 +406,9 @@ class GRUBuilder(ModelBuilder):
         prepro_layers = self.prepro_layers(input_layers,input_data)          
         x = layers.Lambda(lambda x: tf.stack(x,axis=-1))(prepro_layers) 
 
-        x = layers.GRU(units=8, return_sequences=True, #dropout=0.2, recurrent_dropout=0.2,
+        x = layers.GRU(units=32, return_sequences=True, #dropout=0.2, recurrent_dropout=0.2,
                             activation='sigmoid')(x)
-        x = layers.GRU(units=12, return_sequences=False, #dropout=0.2, recurrent_dropout=0.2,
+        x = layers.GRU(units=16, return_sequences=False, #dropout=0.2, recurrent_dropout=0.2,
                             activation='sigmoid')(x)
         x = layers.Flatten()(x)
         

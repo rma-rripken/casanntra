@@ -13,6 +13,31 @@ class GRUBuilder1(ModelBuilder):
         self.window_length = 0
         self.reverse_time_inputs = False
 
+        layers = []
+        names = self.feature_names()
+        if len(names) != len(inp_layers ): 
+            raise ValueError("Inconsistency in number of layers between inp_layers and feature names")
+        thresh = 40000.
+        dims = {x: self.feature_dim(x) for x in names} 
+
+        for fndx, feature in enumerate(self.feature_names()):
+            station_df = df.loc[:,feature]
+            xinput = inp_layers[fndx]
+            prepro_name=f"{feature}_prepro" 
+            if feature in ["dcc", "smscg"] and False:
+                feature_layer = Normalization(axis=None,name=prepro_name)  # Rescaling(1.0)
+            elif feature == "sac_flow" and thresh is not None:
+                feature_layer = Rescaling(1 / thresh, name=prepro_name)  # Normalization(axis=None)
+            elif feature == "sjr_flow" and thresh is not None:
+                feature_layer = Rescaling(0.25 / thresh, name=prepro_name)  # Normalization(axis=None)                
+            else:
+                feature_layer = Normalization(axis=None,name=prepro_name)
+                feature_layer.adapt(
+                    station_df.to_numpy())
+            layers.append(feature_layer(xinput))
+        return layers
+
+
     def build_model(self,input_layers, input_data):
 
         prepro_layers = self.prepro_layers(input_layers,input_data)          
@@ -26,7 +51,7 @@ class GRUBuilder1(ModelBuilder):
         
         outdim = len(self.output_names)
         # The regularization is unknown
-        outputs = layers.Dense(units=outdim, name = "ec", activation='relu',
+        outputs = layers.Dense(units=outdim, name = "ec", activation='sigmoid',
                                kernel_regularizer = regularizers.l1_l2(l1=0.001,l2=0.001))(x)
         ann = Model(inputs = input_layers, outputs = outputs)
         print(ann.summary())
@@ -65,8 +90,12 @@ def test_xvalid_gru():
 
     fpattern = "schism_base_*.csv"
     df = read_data(fpattern)
+    #df = df.loc[df.sac_flow<70000.,:].copy()
 
     df_in, df_out = builder.xvalid_time_folds(df,target_fold_len='180d',split_in_out=True)   # adds a column called 'fold'
+
+
+
 
     # Heuristic scaling of outputs based on known orders of magnitude
     for col in output_names:
@@ -81,7 +110,7 @@ def test_xvalid_gru():
 
 
     plot_locs = ["x2","cse","emm2","jer","bdl","sal","bac"]
-    xvalid_fit(df_in,df_out,builder,nepochs=80,plot_folds="all",plot_locs=plot_locs,out_prefix="output/gru1")
+    xvalid_fit(df_in,df_out,builder,nepochs=80,plot_folds="all",plot_locs=plot_locs,out_prefix="output/gru1clip")
 
 if __name__ == "__main__":
    test_xvalid_gru()

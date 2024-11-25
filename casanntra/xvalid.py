@@ -124,9 +124,10 @@ def xvalid_fit(df_in,df_out,builder,nepochs=80,plot_folds=[],plot_locs=["cse","b
         outputs_xvalid.loc[test_out.index,builder.output_names] = test_pred   # should be numpy array
         print("outputs_xvalid")
         print(outputs_xvalid)
-        print(f"Completed fit for fold {ifold}") 
+        checkname = f"{out_prefix}_check_{ifold}.csv"
+        print(f"Completed fit for fold {ifold}. Writing check point csv to {checkname}") 
 
-        outputs_xvalid.to_csv(f"{out_prefix}_check_{ifold}.csv",float_format="%.3f",date_format="%Y-%m=%dT%H:%M",header=True,index=True)
+        outputs_xvalid.to_csv(checkname,float_format="%.3f",date_format="%Y-%m=%dT%H:%M",header=True,index=True)
         
 
         if (plot_folds == "all") or (ifold in plot_folds):

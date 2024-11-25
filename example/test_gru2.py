@@ -4,7 +4,7 @@ from casanntra.xvalid import xvalid_fit
 
 
 
-class GRUBuilder2(GRUModelBuilder):
+class GRUBuilder2(GRUBuilder):
 
     def __init__(self,input_names,output_names,ndays):
         super().__init__(input_names,output_names,ndays)
@@ -16,16 +16,16 @@ class GRUBuilder2(GRUModelBuilder):
         x = layers.Lambda(lambda x: tf.stack(x,axis=-1))(prepro_layers) 
 
         x = layers.GRU(units=16, return_sequences=True, dropout=0.2, recurrent_dropout=0.2,
-                            activation='sigmoid')(x)
+                            activation='sigmoid',name="GRU1")(x)
         first_gru = x
         # todo: units was successful at units=12
         x = layers.GRU(units=16, return_sequences=True, dropout=0.2, recurrent_dropout=0.2,
-                            activation='sigmoid')(x)
+                            activation='sigmoid',name="GRU2")(x)
         
         x = tf.keras.layers.Add()([x, first_gru])
         
         x = layers.GRU(units=16, return_sequences=False, 
-                            activation='sigmoid')(x)
+                            activation='sigmoid',name="GRU3")(x)
 
         x = layers.Flatten()(x)
         
@@ -44,7 +44,7 @@ class GRUBuilder2(GRUModelBuilder):
         return ann
 
 
-    def fit_model(self,ann,fit_input,fit_output,test_input,test_output,nepochs=200):  # ,tcb):
+    def fit_model(self,ann,fit_input,fit_output,test_input,test_output,nepochs=100):  # ,tcb):
         history = ann.fit(
             fit_input,
             fit_output,
