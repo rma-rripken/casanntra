@@ -69,7 +69,7 @@ def xvalid_fit(df_in,df_out,builder,nepochs=80,plot_folds=[],plot_locs=["cse","b
     if len(bad_plot_loc) > 0:
         raise ValueError(f"Some plot locations are not in the output: {bad_plot_loc}")
 
-    df_out.to_csv(f"{out_prefix}_xvalid_ref_out.csv",float_format="%.3f",date_format="%Y-%m=%dT%H:%M",header=True,index=True)
+    df_out.to_csv(f"{out_prefix}_xvalid_ref_out.csv",float_format="%.3f",date_format="%Y-%m-%dT%H:%M",header=True,index=True)
 
 
 
@@ -127,7 +127,7 @@ def xvalid_fit(df_in,df_out,builder,nepochs=80,plot_folds=[],plot_locs=["cse","b
         checkname = f"{out_prefix}_check_{ifold}.csv"
         print(f"Completed fit for fold {ifold}. Writing check point csv to {checkname}") 
 
-        outputs_xvalid.to_csv(checkname,float_format="%.3f",date_format="%Y-%m=%dT%H:%M",header=True,index=True)
+        outputs_xvalid.to_csv(checkname,float_format="%.3f",date_format="%Y-%m-%dT%H:%M",header=True,index=True)
         
 
         if (plot_folds == "all") or (ifold in plot_folds):
@@ -145,7 +145,7 @@ def xvalid_fit(df_in,df_out,builder,nepochs=80,plot_folds=[],plot_locs=["cse","b
             fig.savefig(f"{out_prefix}_{ifold}.png")
 
 
-    outputs_xvalid.to_csv(f"{out_prefix}_xvalid.csv",float_format="%.3f",date_format="%Y-%m=%dT%H:%M",header=True,index=True)
+    outputs_xvalid.to_csv(f"{out_prefix}_xvalid.csv",float_format="%.3f",date_format="%Y-%m-%dT%H:%M",header=True,index=True)
 
 
 if __name__ == "__main__":
