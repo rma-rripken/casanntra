@@ -10,6 +10,7 @@ class MLPUniBuilder(MLPBuilder):
 
     def __init__(self,input_names,output_names,ndays,nwindows,window_length):
         super().__init__(input_names,output_names,ndays,nwindows,window_length)
+        self.reverse_time_inputs = True
 
     def build_model(self,input_layers, input_data):
         """ Builds the standard CalSIM ANN
@@ -27,16 +28,11 @@ class MLPUniBuilder(MLPBuilder):
         x = layers.Concatenate()(prepro_layers) 
         
         # First hidden layer with 8 neurons and sigmoid activation function
-        x = Dense(units=4, activation='sigmoid', input_dim=x.shape[1], 
-                  kernel_initializer="he_normal",
-                  kernel_regularizer = regularizers.l1_l2(l1=0.001,l2=0.00001),
-                  name="hidden1")(x)
-        x = tf.keras.layers.BatchNormalization()(x)
 
         x = Dense(units=8, activation='sigmoid', input_dim=x.shape[1], 
                   kernel_initializer="he_normal",
                   kernel_regularizer = regularizers.l1_l2(l1=0.001,l2=0.00001),
-                  name="hidden1b")(x)
+                  name="hidden1")(x)
         x = tf.keras.layers.BatchNormalization()(x)
 
         # Second hidden layer 
@@ -48,7 +44,7 @@ class MLPUniBuilder(MLPBuilder):
         # Output layer with 1 neuron
         output = Dense(units=outdim,name="ec",activation="relu")(x)
         ann = Model(inputs = input_layers, outputs = output)
-
+        print(ann.summary())
         ann.compile(
             optimizer=tf.keras.optimizers.Adamax(learning_rate=0.002), 
             loss="mse", 
@@ -77,8 +73,10 @@ class MLPUniBuilder(MLPBuilder):
 
 def test_xvalid_mlp():
     #"sf_tidal_filter",
-    input_names = [ "sac_flow","exports","sjr_flow","cu_flow","sf_tidal_energy",
-                   "sf_tidal_filter","dcc","smscg"]
+    input_names = [ "sac_flow","exports","sjr_flow","cu_flow","sf_tidal_energy", "sf_tidal_filter","dcc","smscg"]
+    input_names = [ "sac_flow","exports","sjr_flow","cu_flow","sf_tidal_energy","dcc","smscg"]
+    #input_names = [ "ndo","sf_tidal_energy","sf_tidal_filter","smscg"]
+
     output_names = ["cse"]
     plot_locs = ["cse"]
 

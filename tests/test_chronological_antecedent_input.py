@@ -43,7 +43,7 @@ output_names = []
 
 model_builder = TestModelBuilder(input_names, output_names, ndays, nwindows, window_length)
 
-df_lagged = model_builder.create_antecedent_inputs(df)
+df_lagged = model_builder.create_antecedent_inputs(df,reverse=False)
 
 print("Original DataFrame:")
 print(df)
