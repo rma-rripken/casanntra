@@ -163,7 +163,7 @@ class ModelBuilder(object):
             prepro_name=f"{feature}_prepro" 
             if feature in ["dcc", "smscg"] and False:
                 feature_layer = Normalization(axis=None,name=prepro_name)  # Rescaling(1.0)
-            elif feature == "sac_flow" and thresh is not None:
+            elif feature in [ "sac_flow", "ndo"] and thresh is not None:
                 feature_layer = Rescaling(1 / thresh, name=prepro_name)  # Normalization(axis=None)
             elif feature == "sjr_flow" and thresh is not None:
                 feature_layer = Rescaling(0.25 / thresh, name=prepro_name)  # Normalization(axis=None)                
@@ -237,7 +237,7 @@ class ModelBuilder(object):
         if reverse is None:
             reverse = self.reverse_time_inputs
 
-        if (not reverse) and (nwindows>0):
+        if not reverse and nwindows>0:
             raise NotImplementedError("Not implmented for non-reverse plus aggregation windows.")
 
         if ndays<0: 
@@ -252,7 +252,7 @@ class ModelBuilder(object):
         for case in df.case.unique():
             df_case = df.loc[df.case == case]
             
-            antecedent = self.create_antecedent_inputs(df_case,ndays,window_length,nwindows)
+            antecedent = self.create_antecedent_inputs(df_case,ndays,window_length,nwindows,reverse)
             antecedes.append(antecedent)
 
         return pd.concat(antecedes,axis=0)
@@ -340,18 +340,14 @@ class ModelBuilder(object):
             nwindows = self.nwindows
         if window_length < 0:
             window_length = self.window_length
+        if reverse is None: reverse = self.reverse_time_inputs
 
         preserve_cols = [x for x in ["datetime", "case", "fold"] if x in df.columns]
         df2 = df[preserve_cols].copy()
         df = df.drop(preserve_cols, axis=1)
         orig_index = df.index
 
-        if reverse is None: 
-            reverse = self.reverse_time_inputs
-
         if not reverse and nwindows > 0:
-            print(reverse)
-            print(nwindows)
             raise NotImplementedError("Not Implemented.")
 
         if reverse:
@@ -406,9 +402,9 @@ class GRUBuilder(ModelBuilder):
         prepro_layers = self.prepro_layers(input_layers,input_data)          
         x = layers.Lambda(lambda x: tf.stack(x,axis=-1))(prepro_layers) 
 
-        x = layers.GRU(units=32, return_sequences=True, #dropout=0.2, recurrent_dropout=0.2,
+        x = layers.GRU(units=8, return_sequences=True, #dropout=0.2, recurrent_dropout=0.2,
                             activation='sigmoid')(x)
-        x = layers.GRU(units=16, return_sequences=False, #dropout=0.2, recurrent_dropout=0.2,
+        x = layers.GRU(units=12, return_sequences=False, #dropout=0.2, recurrent_dropout=0.2,
                             activation='sigmoid')(x)
         x = layers.Flatten()(x)
         

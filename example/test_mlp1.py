@@ -26,14 +26,14 @@ class MLPBuilder1(MLPBuilder):
         x = layers.Concatenate()(prepro_layers) 
         
         # First hidden layer 
-        x = Dense(units=5, activation='linear', input_dim=x.shape[1], 
+        x = Dense(units=12, activation='linear', input_dim=x.shape[1], 
                   kernel_initializer="he_normal",
                   kernel_regularizer = regularizers.l1_l2(l1=0.001,l2=0.00001),
                   name="hidden1")(x)
         x = tf.keras.layers.BatchNormalization()(x)
 
         # Second hidden layer 
-        x = Dense(units=12, activation='sigmoid', kernel_initializer="he_normal",
+        x = Dense(units=8, activation='sigmoid', kernel_initializer="he_normal",
                   kernel_regularizer = regularizers.l1_l2(l1=0.001,l2=0.00001),
                   name="hidden2")(x) 
         x = tf.keras.layers.BatchNormalization(name="batch_normalize")(x)
@@ -70,6 +70,7 @@ class MLPBuilder1(MLPBuilder):
 def test_xvalid_mlp():
     #"sf_tidal_filter",
     input_names = [ "sac_flow","exports","sjr_flow","cu_flow","sf_tidal_energy","sf_tidal_filter","dcc","smscg"]
+    input_names = [ "sac_flow","exports","sjr_flow","cu_flow","sf_tidal_energy","dcc","smscg"]
     output_names = ["x2","mal","nsl2","bdl","cse","emm2","tms","jer","sal","bac","oh4"]
     plot_locs = ["x2","cse","emm2","jer","bdl","sal","bac"]
 

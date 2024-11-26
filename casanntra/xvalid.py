@@ -95,6 +95,9 @@ def xvalid_fit(df_in,df_out,builder,nepochs=80,plot_folds=[],plot_locs=["cse","b
     for ifold in df_in.fold.unique():
         print(f"Starting fit for fold {ifold}")
         fit_in = inputs_lagged.loc[inputs_lagged.fold != ifold,:]
+        
+        #fit_in = fit_in.loc[fit_in.ndo_lag0 < 70000.,:]
+        #fit_in = fit_in.loc[fit_in.sac_flow_lag0 < 70000.,:]
         fit_out = df_out.loc[fit_in.index,builder.output_names]
         test_in = inputs_lagged.loc[inputs_lagged.fold == ifold,:]
         test_out = df_out.loc[test_in.index,builder.output_names]

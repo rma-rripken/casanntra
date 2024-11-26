@@ -1,16 +1,19 @@
 from casanntra.read_data import read_data
 from casanntra.model_builder import *
 from casanntra.xvalid import xvalid_fit
-from test_gru1 import GRUBuilder1
+from test_mlp1 import MLPBuilder1
 from keras.models import load_model
 
-def example_gru1():
+
+def example_mlp1():
 
     fpattern = "schism_base_*.csv"
     df = read_data(fpattern)
     input_names = [ "sac_flow","exports","sjr_flow","cu_flow","sf_tidal_energy","sf_tidal_filter","dcc","smscg"]
-    output_names = ["x2","mal","nsl2","bdl","cse","emm2","tms","jer","sal","bac","oh4"]
-    builder = GRUBuilder1(input_names=input_names,output_names=output_names,ndays=80)
+    output_names = ["x2","mal","god","nsl2","bdl","cse","emm2","tms","jer","sal","hol","bac","oh4"]
+    #output_names = ["cse"]
+    
+    builder = MLPBuilder1(input_names=input_names,output_names=output_names,ndays=14,nwindows=5,window_length=14)
     df_in = df[["datetime","case"]+input_names]   
     df_out = df[output_names]
 
@@ -29,7 +32,7 @@ def example_gru1():
     
     input_layers = builder.input_layers()
     model = builder.build_model(input_layers,df_in)       # todo: check that it is OK for datetime and cases to be in here
-    df_lagged = builder.calc_antecedent_preserve_cases(df_in, ndays=80, reverse=False)
+    df_lagged = builder.calc_antecedent_preserve_cases(df_in)
     timestamps_case = df_lagged[['datetime','case']]
     df_lag_in = df_lagged.drop(["datetime","case"],axis=1)
     df_out_aligned = df_out.reindex(df_lag_in.index)         
@@ -44,9 +47,9 @@ def example_gru1():
     test_in =  {name: test_in.loc[:,idx[name,:]].droplevel("var",axis=1) for name in builder.input_names}    
 
     #
-    fname = "full_data_fit.keras"
+    fname = "full_data_fit_mlp1.keras"
     #model = load_model(fname)
-    history, model = builder.fit_model(model, fit_in, df_out_aligned, test_in, df_out_aligned,nepochs=130)
+    history, model = builder.fit_model(model, fit_in, df_out_aligned, test_in, df_out_aligned,nepochs=301)
     
     
     model.save(fname)
@@ -74,5 +77,5 @@ def example_gru1():
 
 
 if __name__ == "__main__":
-   example_gru1()
+   example_mlp1()
 
