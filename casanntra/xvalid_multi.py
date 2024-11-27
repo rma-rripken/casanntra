@@ -62,7 +62,8 @@ def single_model_fit(builder,df_in,fit_in,fit_out,test_in,test_out,outputs_xvali
     history,ann = builder.fit_model(ann, fit_in, fit_out, test_in, test_out, nepochs=nepochs )
     test_pred = ann.predict(test_in)
     outputs_xvalid.loc[test_out.index,builder.output_names] = test_pred   # should be numpy array
-    return outputs_xvalid
+    return history,ann,outputs_xvalid
+    
 
 def xvalid_fit_multi(df_in,df_out,builder,nepochs=80,plot_folds=[],plot_locs=["cse","bdl","emm2","jer","rsl"],out_prefix="ann_diag",pool_size=10):
     """Splits up the input by fold, witholding each fold in turn, building and training the model for each
@@ -133,7 +134,7 @@ def xvalid_fit_multi(df_in,df_out,builder,nepochs=80,plot_folds=[],plot_locs=["c
             # Optionally, handle the results of the tasks
     for future in concurrent.futures.as_completed(futures):
         try:
-            test_pred = future.result()
+            history,ann,test_pred = future.result()
             ifold = foldmap[future]
             print(f"Processing output for fold {ifold}")
             test_in = inputs_lagged.loc[inputs_lagged.fold == ifold,:]
@@ -141,6 +142,7 @@ def xvalid_fit_multi(df_in,df_out,builder,nepochs=80,plot_folds=[],plot_locs=["c
             outputs_xvalid.loc[test_out.index,builder.output_names] = test_pred  
             print(f"Updating outputs for fold {ifold}")
             outputs_xvalid.to_csv(f"{out_prefix}_xvalid.csv",float_format="%.3f",date_format="%Y-%m-%dT%H:%M",header=True,index=True)
+            del(model)
         except Exception as e:
             logger.error(f"Exception occurred during download: {e}")
  
