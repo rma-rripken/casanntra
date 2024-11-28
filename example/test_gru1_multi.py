@@ -2,7 +2,7 @@ from casanntra.read_data import read_data
 from casanntra.model_builder import *
 from casanntra.xvalid_multi import xvalid_fit_multi
 
-class GRUBuilder1(ModelBuilder):
+class GRUBuilder1m(ModelBuilder):
 
     def __init__(self,input_names,output_names,ndays):
         super().__init__(input_names,output_names)
@@ -54,11 +54,11 @@ class GRUBuilder1(ModelBuilder):
 
 
 
-def test_xvalid_mlp():
+def test_gru_multi():
     input_names = [ "sac_flow","exports","sjr_flow","cu_flow","sf_tidal_energy","sf_tidal_filter","dcc","smscg"]
     output_names = ["x2","mal","nsl2","bdl","cse","emm2","tms","jer","sal","bac","oh4"]
     plot_locs = ["x2","cse","emm2","jer","bdl","sal","bac"]
-    builder = GRUBuilder1(input_names=input_names,output_names=output_names,ndays=80)
+    builder = GRUBuilder1m(input_names=input_names,output_names=output_names,ndays=80)
 
 
     fpattern = "schism_base_*.csv"
@@ -79,9 +79,10 @@ def test_xvalid_mlp():
 
 
     #xvalid_fit(df_in,df_out,builder,plot_folds=[0,1],plot_locs=plot_locs)
-    xvalid_fit_multi(df_in,df_out,builder,plot_folds="all",plot_locs=plot_locs,out_prefix="output/schism_mlp1m.mae",nepochs=150,pool_size=12)
+    xvalid_fit_multi(df_in,df_out,builder,plot_folds="all",plot_locs=plot_locs,
+                     out_prefix="output/schism_gru1m.mae",nepochs=313,pool_size=12)
 
 
 
 if __name__ == "__main__":
-    test_xvalid_mlp()
+    test_gru_multi()
