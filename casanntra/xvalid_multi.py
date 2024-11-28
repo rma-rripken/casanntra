@@ -97,10 +97,10 @@ def xvalid_fit_multi(df_in,df_out,builder,nepochs=80,plot_folds=[],plot_locs=["c
     xvalid_outs = []
     futures = []
     foldmap= {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=pool_size) as executor:
+    with concurrent.futures.ProcessPoolExecutor(max_workers=pool_size) as executor:
         # Schedule the download tasks and handle them asynchronously
         for ifold in df_in.fold.unique():
-            print(f"Starting fit for fold {ifold}")
+            print(f"Scheduling fit for fold {ifold}")
             fit_in = inputs_lagged.loc[inputs_lagged.fold != ifold,:]
             
             #fit_in = fit_in.loc[fit_in.ndo_lag0 < 70000.,:]
