@@ -56,16 +56,18 @@ import matplotlib.pyplot as plt
 8. Save the model.
 
 """
-def single_model_fit(builder,df_in,fit_in,fit_out,test_in,test_out,outputs_xvalid,nepochs):
+def single_model_fit(builder,df_in,fit_in,fit_out,test_in,test_out,nepochs):
     input_layers = builder.input_layers()
     ann = builder.build_model(input_layers, df_in)
     history,ann = builder.fit_model(ann, fit_in, fit_out, test_in, test_out, nepochs=nepochs )
     test_pred = ann.predict(test_in)
-    outputs_xvalid.loc[test_out.index,builder.output_names] = test_pred   # should be numpy array
-    return history,ann,outputs_xvalid
+    #outputs_xvalid = pd.DataFrame(index=test_out.index,columns=builder.output_names)
+    #outputs_xvalid.iloc[:,:] = test_pred   # should be numpy array
+    return test_pred
     
 
-def xvalid_fit_multi(df_in,df_out,builder,nepochs=80,plot_folds=[],plot_locs=["cse","bdl","emm2","jer","rsl"],out_prefix="ann_diag",pool_size=10):
+def xvalid_fit_multi(df_in,df_out,builder,nepochs=80,plot_folds=[],
+                     plot_locs=["cse","bdl","emm2","jer","rsl"],out_prefix="ann_diag",pool_size=10):
     """Splits up the input by fold, witholding each fold in turn, building and training the model for each
        and then evaluating the witheld data
     """
@@ -74,7 +76,8 @@ def xvalid_fit_multi(df_in,df_out,builder,nepochs=80,plot_folds=[],plot_locs=["c
     if len(bad_plot_loc) > 0:
         raise ValueError(f"Some plot locations are not in the output: {bad_plot_loc}")
 
-    df_out.to_csv(f"{out_prefix}_xvalid_ref_out.csv",float_format="%.3f",date_format="%Y-%m-%dT%H:%M",header=True,index=True)
+    df_out.to_csv(f"{out_prefix}_xvalid_ref_out.csv",float_format="%.3f",
+                  date_format="%Y-%m-%dT%H:%M",header=True,index=True)
 
 
 
@@ -97,6 +100,7 @@ def xvalid_fit_multi(df_in,df_out,builder,nepochs=80,plot_folds=[],plot_locs=["c
     xvalid_outs = []
     futures = []
     foldmap= {}
+
     with concurrent.futures.ProcessPoolExecutor(max_workers=pool_size) as executor:
         # Schedule the download tasks and handle them asynchronously
         for ifold in df_in.fold.unique():
@@ -127,24 +131,33 @@ def xvalid_fit_multi(df_in,df_out,builder,nepochs=80,plot_folds=[],plot_locs=["c
             #outputs_xvalid.loc[test_out.index,builder.output_names] = test_pred   # should be numpy array
             #checkname = f"{out_prefix}_check_{ifold}.csv"
             #outputs_xvalid.to_csv(checkname,float_format="%.3f",date_format="%Y-%m-%dT%H:%M",header=True,index=True)
-            future = executor.submit(single_model_fit, builder, df_in, fit_in, fit_out, test_in, test_out, outputs_xvalid, nepochs=nepochs)
+            future = executor.submit(single_model_fit, builder, df_in, fit_in, fit_out,
+                                      test_in, test_out, nepochs=nepochs)
             futures.append(future)
             foldmap[future] = ifold
 
             # Optionally, handle the results of the tasks
+    histories = {}        
     for future in concurrent.futures.as_completed(futures):
         try:
-            history,ann,test_pred = future.result()
+            test_pred = future.result()
             ifold = foldmap[future]
             print(f"Processing output for fold {ifold}")
+            #histories[ifold]=history
             test_in = inputs_lagged.loc[inputs_lagged.fold == ifold,:]
             test_out = df_out.loc[test_in.index,builder.output_names]
             outputs_xvalid.loc[test_out.index,builder.output_names] = test_pred  
             print(f"Updating outputs for fold {ifold}")
-            outputs_xvalid.to_csv(f"{out_prefix}_xvalid.csv",float_format="%.3f",date_format="%Y-%m-%dT%H:%M",header=True,index=True)
-            del(model)
+            outputs_xvalid.to_csv(f"{out_prefix}_xvalid.csv",float_format="%.3f",
+                                  date_format="%Y-%m-%dT%H:%M",header=True,index=True)
+            
+            print(f"Done with  {ifold}")
         except Exception as e:
-            logger.error(f"Exception occurred during download: {e}")
+            print(f"Exception occurred: {e}")
+    
+    outputs_xvalid.to_csv(f"{out_prefix}_xvalid.csv",float_format="%.3f",
+                           date_format="%Y-%m-%dT%H:%M",header=True,index=True)
+    return outputs_xvalid, histories
  
 
 
