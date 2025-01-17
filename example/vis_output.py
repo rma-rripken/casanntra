@@ -6,8 +6,8 @@ output_prefix = "output/dsm2_gru2.pc2"
 
 #model_data=pd.read_csv("output/schism_mlp1m.mae_xvalid_ref_out.csv",index_col=0, parse_dates=['datetime'],header=0)
 #ann_data=pd.read_csv("output/schism_mlp1m.mae_xvalid.csv",index_col=0, parse_dates=['datetime'],header=0)
-model_data=pd.read_csv(f"{output_prefix}_xvalid_ref_out.csv",index_col=0, parse_dates=['datetime'],header=0)
-ann_data=pd.read_csv(f"{output_prefix}_xvalid.csv",index_col=0, parse_dates=['datetime'],header=0)
+model_data=pd.read_csv(f"{output_prefix},_xvalid_ref_out.csv",index_col=0, parse_dates=['datetime'],header=0)
+ann_data=pd.read_csv(f"{output_prefix},_xvalid.csv",index_col=0, parse_dates=['datetime'],header=0)
 
 
 
@@ -24,11 +24,14 @@ full_names = {
   "mal" : "Mallard",
   "hll" : "Holland Cut",
   "sal" : "San Andreas Landing",
-  "bdl" : "Beldon's Landing"
+  "bdl" : "Beldon's Landing",
+  "god" : "Godfather Sl",
+  "gzl" : "Grizzly Bay",
+  "vol" : "Suisun Sl at Volanti"
 }
 
 
-station = "jer"
+station = "god"
 title = full_names[station]
 
 
