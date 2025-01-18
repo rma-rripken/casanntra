@@ -1,7 +1,12 @@
+# Reduce regularization
+# Larger model
+# MSE or weighted MAE
+
+
 from casanntra.read_data import read_data
 from casanntra.model_builder import *
 from casanntra.xvalid_multi import xvalid_fit_multi
-from casanntra.tidal_transorms import *
+from casanntra.tide_transforms import *
 
 from sklearn.decomposition import PCA
 
@@ -45,30 +50,33 @@ class GRUBuilder2m(ModelBuilder):
 
     def build_model(self,input_layers, input_data):
 
-        prepro_layers = self.prepro_layers(input_layers,input_data)          
-        x = layers.Lambda(lambda x: tf.stack(x,axis=-1))(prepro_layers) 
-        x = layers.GRU(units=32, return_sequences=True, 
-                            activation='sigmoid',name='gru_1')(x)
-        x = layers.GRU(units=16, return_sequences=True, 
-                            activation='sigmoid',name='gru_2')(x)
-        x = layers.Flatten()(x)
-        
-        outdim = len(self.output_names)
-        # The regularization is unknown
-        outputs = layers.Dense(units=outdim, name = "ec", activation='elu',
-                               kernel_regularizer = regularizers.l1_l2(l1=0.00025,l2=0.00025))(x)
-        ann = Model(inputs = input_layers, outputs = outputs)
-        print(ann.summary())
-        ann.compile(
-            optimizer=tf.keras.optimizers.Adamax(learning_rate=0.008), 
-            loss='mae',   # could be mean_absolute_error or mean_squared_error 
-            metrics=['mean_absolute_error','mse'],
-            run_eagerly=True
-        )
+        fname = "dsm2_gru2_pc2.h5"
+        do_load = False
+        if do_load:
+            ann = load_model(fname)
+            print(ann.summary())
+            return ann
+        else: 
+            prepro_layers = self.prepro_layers(input_layers,input_data)          
+            x = layers.Lambda(lambda x: tf.stack(x,axis=-1))(prepro_layers) 
+            x = layers.GRU(units=32, return_sequences=True, 
+                                activation='sigmoid',name='gru_1')(x)
+            x = layers.GRU(units=16, return_sequences=True, 
+                                activation='sigmoid',name='gru_2')(x)
+            x = layers.Flatten()(x)
+            
+            outdim = len(self.output_names)
+            # The regularization is unknown
+            outputs = layers.Dense(units=outdim, name = "ec", activation='elu',
+                                kernel_regularizer = regularizers.l1_l2(l1=0.0001,l2=0.0001))(x)
+            ann = Model(inputs = input_layers, outputs = outputs)
+            print(ann.summary())
+
         return ann
 
 
     def fit_model(self,ann,fit_input,fit_output,test_input,test_output,nepochs=80):  # ,tcb):
+                
         ann.compile(
             optimizer=tf.keras.optimizers.Adamax(learning_rate=0.008), 
             loss='mae',   # could be mean_absolute_error or mean_squared_error 
@@ -88,7 +96,7 @@ class GRUBuilder2m(ModelBuilder):
             optimizer=tf.keras.optimizers.Adamax(learning_rate=0.001), 
             loss='mae',   # could be mean_absolute_error or mean_squared_error 
             metrics=['mean_absolute_error','mse'],
-            run_eagerly=True
+            run_eagerly=False
         )
         history = ann.fit(
             fit_input,
@@ -98,7 +106,9 @@ class GRUBuilder2m(ModelBuilder):
             validation_data=(test_input, test_output),
             verbose=2,
             shuffle=True
-            )        
+            ) 
+        ann.save(fname)
+
         return history, ann
 
 
@@ -139,7 +149,7 @@ def test_gru_multi():
 
     #xvalid_fit(df_in,df_out,builder,plot_folds=[0,1],plot_locs=plot_locs)
     xvalid_fit_multi(df_in,df_out,builder,plot_folds="all",plot_locs=plot_locs,
-                     out_prefix="output/dsm2_gru2.pc2,",nepochs=100,pool_size=10)
+                     out_prefix="output/dsm2_gru2.pc2.xtracases",nepochs=120,pool_size=11)
 
 
 
