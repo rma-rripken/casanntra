@@ -19,7 +19,7 @@ def read_data(file_pattern,data_dir = data_repo):
         dss.append(x) 
     df = pd.concat(dss,axis = 0)
     df = df.reset_index(drop=True)
-    if "dsm2" in "file_pattern":
+    if "dsm2" in file_pattern:
         for i in range(101,105):
             df.loc[df.case == i,"sf_tidal_filter"] = df.loc[df.case == i,"mrz_tidal_filter"]
             df.loc[df.case == i,"sf_tidal_energy"] = df.loc[df.case == 23,"sf_tidal_energy"].values   
