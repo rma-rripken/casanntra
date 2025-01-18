@@ -7,12 +7,16 @@
 
 
 import pandas as pd
+from tensorflow.keras.layers import Lambda
 from casanntra.read_data import read_data
 from casanntra.model_builder import *
 from casanntra.xvalid_multi import xvalid_fit_multi
 from casanntra.tide_transforms import *
 
-
+def modified_exponential_decay(x, a=5e-5, b=80000):
+    exp_decay = tf.exp(-a * x)
+    exp_decay_tapered = (exp_decay - tf.exp(-a * b)) / (1 - tf.exp(-a * b))
+    return exp_decay_tapered
 
 class GRUBuilder2m(ModelBuilder):
 
@@ -34,6 +38,8 @@ class GRUBuilder2m(ModelBuilder):
         thresh = 40000.
         dims = {x: self.feature_dim(x) for x in names} 
 
+
+
         for fndx, feature in enumerate(self.feature_names()):
             station_df = df.loc[:,feature]
             xinput = inp_layers[fndx]
@@ -41,7 +47,9 @@ class GRUBuilder2m(ModelBuilder):
             if feature in ["dcc", "smscg"] and False:
                 feature_layer = Normalization(axis=None,name=prepro_name)  # Rescaling(1.0)
             elif feature in [ "sac_flow", "ndo"] and thresh is not None:
-                feature_layer = Rescaling(1 / thresh, name=prepro_name)  # Normalization(axis=None)
+                #scale_factor = tf.Variable(initial_value=0.5, trainable=True, dtype=tf.float32)
+                feature_layer = Lambda(lambda x: modified_exponential_decay(x),name=prepro_name)
+                #feature_layer = trainable_scale(Rescaling(1 / thresh, name=prepro_name)  # Normalization(axis=None)
             elif feature == "sjr_flow" and thresh is not None:
                 feature_layer = Rescaling(0.25 / thresh, name=prepro_name)  # Normalization(axis=None)                
             else:
@@ -97,7 +105,7 @@ class GRUBuilder2m(ModelBuilder):
             optimizer=tf.keras.optimizers.Adamax(learning_rate=0.001), 
             loss='mae',   # could be mean_absolute_error or mean_squared_error 
             metrics=['mean_absolute_error','mse'],
-            run_eagerly=True
+            run_eagerly=False
         )
         history = ann.fit(
             fit_input,
@@ -124,6 +132,7 @@ def test_gru_multi():
     df = append_tidal_pca_cols(df)
 
 
+
     df_in, df_out = builder.xvalid_time_folds(df,target_fold_len='180d',split_in_out=True)   # adds a column called 'fold'
 
 
@@ -147,7 +156,7 @@ def test_gru_multi():
 
     #xvalid_fit(df_in,df_out,builder,plot_folds=[0,1],plot_locs=plot_locs)
     xvalid_fit_multi(df_in,df_out,builder,plot_folds="all",plot_locs=plot_locs,
-                     out_prefix="output/dsm2_gru2.pc2,",nepochs=100,pool_size=10)
+                     out_prefix="output/dsm2_gru2.pc2,",nepochs=100,pool_size=11)
 
 
 
