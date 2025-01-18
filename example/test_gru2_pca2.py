@@ -61,7 +61,7 @@ class GRUBuilder2m(ModelBuilder):
             x = layers.Lambda(lambda x: tf.stack(x,axis=-1))(prepro_layers) 
             x = layers.GRU(units=32, return_sequences=True, 
                                 activation='sigmoid',name='gru_1')(x)
-            x = layers.GRU(units=16, return_sequences=True, 
+            x = layers.GRU(units=16, return_sequences=False, 
                                 activation='sigmoid',name='gru_2')(x)
             x = layers.Flatten()(x)
             
