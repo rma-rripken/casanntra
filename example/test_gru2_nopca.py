@@ -5,7 +5,7 @@
 
 from casanntra.read_data import read_data
 from casanntra.model_builder import *
-from casanntra.xvalid_multi import xvalid_fit_multi
+from casanntra.xvalid_multi import xvalid_fit_multi,bulk_fit
 from casanntra.tide_transforms import *
 
 from sklearn.decomposition import PCA
@@ -107,7 +107,6 @@ class GRUBuilder2m(ModelBuilder):
             verbose=2,
             shuffle=True
             ) 
-        ann.save(fname)
 
         return history, ann
 
@@ -121,6 +120,7 @@ def test_gru_multi():
     plot_locs = ["x2","cse","emm2","jer","bdl","sal","bac"]
     builder = GRUBuilder2m(input_names=input_names,output_names=output_names,ndays=80)
 
+    fname = "dsm2_base_gru2.nopca.h5"
     fpattern = "dsm2_base_*.csv"
     df = read_data(fpattern)
     df = append_tidal_pca_cols(df)
@@ -146,11 +146,14 @@ def test_gru_multi():
         else:
             df_out.loc[:,col] = df_out.loc[:,col]/1500.
 
-
-    #xvalid_fit(df_in,df_out,builder,plot_folds=[0,1],plot_locs=plot_locs)
     xvalid_fit_multi(df_in,df_out,builder,plot_folds="all",plot_locs=plot_locs,
                      out_prefix="output/dsm2_gru2.pc2.xtracases",nepochs=120,pool_size=11)
 
+    ann = bulk_fit(builder,df_in,df_out,
+                   fit_in=df_in,fit_out=df_out,
+                   test_in=df_in,test_out=df_out,
+                           nepochs=12)
+    ann.save(fname)
 
 
 if __name__ == "__main__":
