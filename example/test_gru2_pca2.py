@@ -107,7 +107,6 @@ class GRUBuilder2m(ModelBuilder):
             verbose=2,
             shuffle=True
             ) 
-        ann.save(fname)
 
         return history, ann
 
@@ -151,6 +150,7 @@ def test_gru_multi():
     xvalid_fit_multi(df_in,df_out,builder,plot_folds="all",plot_locs=plot_locs,
                      out_prefix="output/dsm2_gru2.pc2.xtracases",nepochs=120,pool_size=11)
 
+     
 
 
 if __name__ == "__main__":
