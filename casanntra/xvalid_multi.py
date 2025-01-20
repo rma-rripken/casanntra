@@ -56,6 +56,7 @@ import matplotlib.pyplot as plt
 8. Save the model.
 
 """
+
 def single_model_fit(builder,df_in,fit_in,fit_out,test_in,test_out,nepochs):
     input_layers = builder.input_layers()
     ann = builder.build_model(input_layers, df_in)
@@ -64,7 +65,51 @@ def single_model_fit(builder,df_in,fit_in,fit_out,test_in,test_out,nepochs):
     #outputs_xvalid = pd.DataFrame(index=test_out.index,columns=builder.output_names)
     #outputs_xvalid.iloc[:,:] = test_pred   # should be numpy array
     return test_pred
-    
+
+
+
+def bulk_fit(builder,df_in,df_out,fit_in,fit_out,test_in,test_out,nepochs):
+    """Uses the ingredients of xvalid_multi but does a single fit with all the data for 
+       situations like exporting the model where a single version of the model is needed"""
+
+    df_in = df_in.copy()
+    df_in["ifold"] = 0   # hobbles cases, creating a single dataset
+    df_out["ifold"] = 0
+    # This constructs inputs with antecedent/lagged values
+    # "datetime," "fold" and "case" are preserved.
+    inputs_lagged = builder.calc_antecedent_preserve_cases(df_in)
+
+    # Lagging causes some data at the beginning to be trimmed. This performs the same trim on the outputs
+    outputs_trim = df_out.loc[inputs_lagged.index,:]
+
+    # Pre-construct data structure that will receive predictions for data left out. 
+    outputs_xvalid= pd.DataFrame().reindex_like(outputs_trim)
+    outputs_xvalid[["datetime","case","fold"]] = outputs_trim[["datetime","case","fold"]]
+
+    fit_in = inputs_lagged
+    fit_out = outputs_trim.loc[fit_in.index,builder.output_names]
+    test_in = inputs_lagged
+    test_out = outputs_trim.loc[test_in.index,builder.output_names]
+            
+
+    # The preprocessing layers are scaled using the full dataset so that the scaling is the same every time
+
+    testdt = test_in.datetime
+    idx = pd.IndexSlice
+    # These libraries separate the inputs into individual dataframes matching the input names
+    fit_in = builder.df_by_feature_and_time(fit_in).drop(["datetime","case","fold"], level="var", axis=1)
+    fit_in =  {name: fit_in.loc[:,idx[name,:]].droplevel("var",axis=1) for name in builder.input_names}
+
+    testdt = test_in.datetime
+    test_in = builder.df_by_feature_and_time(test_in).drop(["datetime","case","fold"], level="var", axis=1)
+    test_in = {name: test_in.loc[:,idx[name,:]].droplevel("var",axis=1) for name in builder.input_names}
+            
+    input_layers = builder.input_layers()
+    ann = builder.build_model(input_layers, df_in)
+    history,ann = builder.fit_model(ann, fit_in, fit_out, test_in, test_out, nepochs=nepochs )
+    test_pred = ann.predict(test_in)
+    return ann
+
 
 def xvalid_fit_multi(df_in,df_out,builder,nepochs=80,plot_folds=[],
                      plot_locs=["cse","bdl","emm2","jer","rsl"],out_prefix="ann_diag",pool_size=10):
