@@ -11,10 +11,25 @@ fpattern = "dsm2_base_*.csv"
 df = read_data(fpattern)
 #df['sf_dsub'] = df.groupby('case')['sf_tidal_filter'].transform(difference)
 data_normalized = df[['sf_tidal_filter', 'sf_tidal_energy','case']] 
-data_normalized.loc[:,"sf_tidal_filter"] -= data_normalized.groupby("case")["sf_tidal_filter"].transform("mean")
-data_normalized.loc[:,"sf_tidal_filter"] /= data_normalized.sf_tidal_filter.std()
-data_normalized.loc[:,"sf_tidal_energy"] -=  data_normalized.sf_tidal_energy.mean()  # Note global for energy, group for filter
-data_normalized.loc[:,"sf_tidal_energy"] /= data_normalized.sf_tidal_energy.std()
+case_mean = data_normalized.groupby("case")["sf_tidal_filter"].transform("mean")     # 3.75
+data_normalized.loc[:,"sf_tidal_filter"] -= case_mean
+case_std = data_normalized.groupby("case")["sf_tidal_filter"].transform("std")        # 0.35
+
+data_normalized.loc[:,"sf_tidal_filter"] /= case_std
+
+
+mean_energy = data_normalized.sf_tidal_energy.mean()    # Note global for energy, group for filter
+std_energy =  data_normalized.sf_tidal_energy.std()
+
+print(f"mean_energy: {mean_energy}, std_energy: {std_energy}")
+
+fig,(ax0,ax1) = plt.subplots(2,sharex=True,figsize=(8, 6))
+ax0.plot(case_mean)
+ax1.plot(case_std)
+plt.show()
+
+data_normalized.loc[:,"sf_tidal_energy"] -=  mean_energy  
+data_normalized.loc[:,"sf_tidal_energy"] /=  std_energy
 data_normalized = data_normalized.drop("case",axis=1)
 
 
