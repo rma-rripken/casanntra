@@ -152,7 +152,7 @@ def test_gru_multi():
     ann = bulk_fit(builder,df_in,df_out,
                    fit_in=df_in,fit_out=df_out,
                    test_in=df_in,test_out=df_out,
-                           nepochs=12)
+                           nepochs=120)
     ann.save(fname)
 
 
