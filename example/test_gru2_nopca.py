@@ -123,7 +123,7 @@ def test_gru_multi():
     fname = "dsm2_base_gru2.nopca.h5"
     fpattern = "dsm2_base_*.csv"
     df = read_data(fpattern)
-    df = append_tidal_pca_cols(df)
+    df = append_tidal_pca_cols_approx(df) 
 
 
     df_in, df_out = builder.xvalid_time_folds(df,target_fold_len='180d',split_in_out=True)   # adds a column called 'fold'

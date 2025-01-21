@@ -30,3 +30,34 @@ def append_tidal_pca_cols(df):
     return df_out
 
 
+def append_tidal_pca_cols_approx(df):
+    appr_tidal_mean = 0.75
+    appr_tidal_std = 0.35
+    appr_mean_energy = 2.6
+    appr_std_energy = 0.67
+
+    data_normalized = df[['sf_tidal_filter', 'sf_tidal_energy','case']] 
+    data_normalized.loc[:,"sf_tidal_filter"] -= appr_tidal_mean
+    data_normalized.loc[:,"sf_tidal_filter"] /= appr_tidal_std
+       
+
+    data_normalized.loc[:,"sf_tidal_energy"] -=  appr_mean_energy
+    data_normalized.loc[:,"sf_tidal_energy"] /=  appr_std_energy
+    data_normalized = data_normalized.drop("case",axis=1)
+    pc0 = (data_normalized.sf_tidal_filter + data_normalized.sf_tidal_energy)*0.707
+    pc1 = (data_normalized.sf_tidal_filter - data_normalized.sf_tidal_energy)*0.707
+    pc0.name = "tidal_pc1"
+    pc1.name = "tidal_pc2"
+    # Perform PCA
+    #pca = PCA(n_components=2)
+    #pca_loadings = pca.fit_transform(data_normalized)
+    #print(data_normalized.columns)
+    #pca_df = pd.DataFrame(index=data_normalized.index,
+    #                    data={'tidal_pc1': pca_loadings[:, 0],
+    #                    'tidal_pc2': pca_loadings[:, 1]})
+    #df_out = pd.concat([df,pca_df],axis=1)
+    
+    df_out = pd.concat([df,pc0,pc1],axis=1)
+    print(df_out)
+    
+    return df_out
