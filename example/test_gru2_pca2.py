@@ -7,6 +7,7 @@ from casanntra.read_data import read_data
 from casanntra.model_builder import *
 from casanntra.xvalid_multi import xvalid_fit_multi,bulk_fit
 from casanntra.tide_transforms import *
+from keras.models import load_model
 
 from sklearn.decomposition import PCA
 
@@ -157,7 +158,7 @@ def test_gru_multi():
     ann = bulk_fit(builder,df_in,df_out,
                    fit_in=df_in,fit_out=df_out,
                    test_in=df_in,test_out=df_out,
-                           nepochs=12)
+                           nepochs=120)
     ann.save(fname)
 
 
