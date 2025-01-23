@@ -26,7 +26,9 @@ def read_data(file_pattern,data_dir = data_repo):
         for i in range(105,108):
             df.loc[df.case == i,"sf_tidal_filter"] = df.loc[df.case == i,"mrz_tidal_filter"]
             df.loc[df.case == i,"sf_tidal_energy"] = df.loc[df.case == 45,"sf_tidal_energy"].values
-
+    else:
+        df.loc[:,"delta_cu"]*=-1.
+        df.loc[:,"exports"]*=1.
     
     return df
 

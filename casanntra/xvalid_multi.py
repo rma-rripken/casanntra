@@ -56,19 +56,25 @@ import matplotlib.pyplot as plt
 8. Save the model.
 
 """
-
-def single_model_fit(builder,df_in,fit_in,fit_out,test_in,test_out,nepochs):
+def single_model_fit(builder,df_in,fit_in,fit_out,test_in,test_out,
+                     out_prefix, init_train_rate,
+                     init_epochs, main_train_rate, main_epochs):
     input_layers = builder.input_layers()
     ann = builder.build_model(input_layers, df_in)
-    history,ann = builder.fit_model(ann, fit_in, fit_out, test_in, test_out, nepochs=nepochs )
+    history,ann = builder.fit_model(ann, fit_in, fit_out, test_in, test_out, 
+                                    init_train_rate=init_train_rate,
+                                    init_epochs=init_epochs, 
+                                    main_train_rate=main_train_rate, 
+                                    main_epochs=main_epochs)
+                                    
     test_pred = ann.predict(test_in)
     #outputs_xvalid = pd.DataFrame(index=test_out.index,columns=builder.output_names)
     #outputs_xvalid.iloc[:,:] = test_pred   # should be numpy array
     return test_pred
+    
 
-
-
-def bulk_fit(builder,df_in,df_out,fit_in,fit_out,test_in,test_out,nepochs):
+def bulk_fit(builder,df_in,df_out,out_prefix,fit_in,fit_out,test_in,test_out,
+             init_train_rate,init_epochs,main_train_rate,main_epochs):
     """Uses the ingredients of xvalid_multi but does a single fit with all the data for 
        situations like exporting the model where a single version of the model is needed"""
 
@@ -106,13 +112,19 @@ def bulk_fit(builder,df_in,df_out,fit_in,fit_out,test_in,test_out,nepochs):
             
     input_layers = builder.input_layers()
     ann = builder.build_model(input_layers, df_in)
-    history,ann = builder.fit_model(ann, fit_in, fit_out, test_in, test_out, nepochs=nepochs )
+    print("epoch",init_epochs,main_epochs)
+    history,ann = builder.fit_model(ann, fit_in, fit_out, test_in, test_out, 
+                                    init_train_rate=init_train_rate,init_epochs=init_epochs,
+                                    main_train_rate=main_train_rate,main_epochs=main_epochs  )
     test_pred = ann.predict(test_in)
     return ann
 
+    #xvalid_fit_multi(df_in,df_out,builder,plot_folds="all",plot_locs=plot_locs,
+    #                 out_prefix=output_prefix, init_train_rate=init_train_rate,
+    #                 init_epochs=init_epochs main_train_rate=None, main_epochs=-1, pool_size=pool_size)
 
-def xvalid_fit_multi(df_in,df_out,builder,nepochs=80,plot_folds=[],
-                     plot_locs=["cse","bdl","emm2","jer","rsl"],out_prefix="ann_diag",pool_size=10):
+def xvalid_fit_multi(df_in,df_out,builder,init_train_rate,init_epochs,main_train_rate,main_epochs,
+                     out_prefix,pool_size,plot_folds=[],plot_locs=[]):
     """Splits up the input by fold, witholding each fold in turn, building and training the model for each
        and then evaluating the witheld data
     """
@@ -177,7 +189,9 @@ def xvalid_fit_multi(df_in,df_out,builder,nepochs=80,plot_folds=[],
             #checkname = f"{out_prefix}_check_{ifold}.csv"
             #outputs_xvalid.to_csv(checkname,float_format="%.3f",date_format="%Y-%m-%dT%H:%M",header=True,index=True)
             future = executor.submit(single_model_fit, builder, df_in, fit_in, fit_out,
-                                      test_in, test_out, nepochs=nepochs)
+                                      test_in, test_out, out_prefix = out_prefix,
+                                      init_epochs=init_epochs,init_train_rate=init_train_rate,
+                                      main_epochs=main_epochs,main_train_rate=main_train_rate)
             futures.append(future)
             foldmap[future] = ifold
 
@@ -203,15 +217,6 @@ def xvalid_fit_multi(df_in,df_out,builder,nepochs=80,plot_folds=[],
     outputs_xvalid.to_csv(f"{out_prefix}_xvalid.csv",float_format="%.3f",
                            date_format="%Y-%m-%dT%H:%M",header=True,index=True)
     return outputs_xvalid, histories
- 
-
-
-
-
-
-
-
-
 
 if __name__ == "__main__":
 
