@@ -1,0 +1,41 @@
+steps:
+- name: dsm2_base
+  input_prefix: dsm2_base
+  input_mask_regex: None     # regex to filter out (not implemented)
+  output_prefix: dsm2_base_gru2
+  save_model_fname: dsm2_base_gru2.h5
+  load_model_fname: None
+  pool_size: 11
+  pool_aggregation: True    # Folds collapsed to pool_size (specify True) or a fixed # (specify integer), helpful for large number of cases
+  target_fold_length: 180d
+  init_train_rate: 0.008
+  init_epochs: 10
+  main_train_rate: 0.001
+  main_epochs: 110
+- name: dsm2.schism
+  input_prefix: schism_base
+  input_mask_regex: None     # regex to filter out (not implemented)
+  output_prefix: dsm2.schism_base_gru2
+  save_model_fname: dsm2.schism_base_gru2.h5
+  load_model_fname: dsm2_base_gru2.h5
+  pool_size: 10
+  pool_aggregation: False
+  target_fold_length: 180d
+  init_train_rate: 0.001  # Low rate for transfer learning
+  init_epochs: 20
+  main_train_rate: None
+  main_epochs: 0    
+- name: base.suisun
+  input_prefix: schism_suisun
+  input_mask_regex: None     # regex to filter out (not implemented)
+  output_prefix: schism_base.suisun_gru2
+  save_model_fname: schism_base.suisun.gru2.h5
+  load_model_fname: dsm2.schism_base_gru2.h5
+  pool_size: 11
+  pool_aggregation: False
+  target_fold_length: 180d
+  init_train_rate: 0.001  # Only one round at low learn rate for transfer learning
+  init_epochs: 20
+  main_train_rate: None
+  main_epochs: 0  
+  

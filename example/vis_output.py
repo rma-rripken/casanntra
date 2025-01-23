@@ -1,8 +1,20 @@
 
 import matplotlib.pyplot as plt
 import pandas as pd
+import sys
 
-output_prefix = "output/dsm2_gru2.pc2.xtracases"
+output_prefixs = {}
+output_prefix0 = "dsm2.schism_base_gru2"
+output_prefix1 = "dsm2_base_gru2"
+output_prefixs["dsm2.schism"] = output_prefix0
+output_prefixs["dsm2"] = output_prefix1
+
+
+station = "x2"
+if len(sys.argv) > 1: station = sys.argv[1]
+if len(sys.argv) > 2: 
+   model = sys.argv[2]
+   output_prefix = output_prefixs[model]
 
 #model_data=pd.read_csv("output/schism_mlp1m.mae_xvalid_ref_out.csv",index_col=0, parse_dates=['datetime'],header=0)
 #ann_data=pd.read_csv("output/schism_mlp1m.mae_xvalid.csv",index_col=0, parse_dates=['datetime'],header=0)
