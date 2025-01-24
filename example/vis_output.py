@@ -43,7 +43,6 @@ full_names = {
 }
 
 
-station = "jer"
 title = full_names[station]
 
 
@@ -55,6 +54,7 @@ nax = len(axes)
 for i in range(ncase):
     print(i)
     icase = i + 1 +i*10 + 11 
+    #icase = i+1
     sub_mod = model_data.loc[model_data.case==icase,:]
     sub_ann = ann_data.loc[ann_data.case==icase,:]
     ax = axes[i]
