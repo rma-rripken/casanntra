@@ -1,3 +1,5 @@
+""" Informal testbed for scaling funcitons, mostly intended for Sac/NDO/Northern"""
+
 import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
