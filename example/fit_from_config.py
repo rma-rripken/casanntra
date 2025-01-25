@@ -7,141 +7,13 @@ from casanntra.read_data import read_data
 from casanntra.model_builder import *
 from casanntra.xvalid_multi import xvalid_fit_multi,bulk_fit
 from casanntra.tide_transforms import *
+from casanntra.scaling import ModifiedExponentialDecayLayer,TunableModifiedExponentialDecayLayer
 from keras.models import load_model
-
 from sklearn.decomposition import PCA
 
-class GRUBuilder2m(ModelBuilder):
-    """
-    This model builder is the current (2025-01-20) standard recursive model
-    """
-
-    def __init__(self,input_names,output_names,ndays,load_model_fname=None):
-        super().__init__(input_names,output_names,load_model_fname)
-        self.ntime = ndays                  
-        self.ndays = ndays                  # Number of individual days
-        self.nwindows = 0                   # Number of windows, always zero for recursive
-        self.window_length = 0              # Length of each windows
-        self.reverse_time_inputs = False    # Reorder days looking backward. 
-                                            # False for recursive, True (by convention) for MLP
-        
-    def prepro_layers(self, inp_layers, df):
-        """ Create the preprocessing layers, one per location, which will be concatenated later.
-            This function performs any sort of special scaling. Here the superclass is overridden.
-            Many of the scales are chosen to saturate above the effective limit (e.g. above 40,000cfs for Sac).
-            Examples of processing dataframe with multiindex of locations and lags into normalized inputs. Other 
-            normalization ideas are contained here: 
-
-            Do not recommend scaling rivers with volatile upper limits based on that. For instance, Sac River 
-            maximum depends capriciously on the choice of year, and the range will be as much as 300,000 which compresses
-            the usable range for salinity into the range [0,0.1]. Alternatively we can do transformations.
-        """
-        layers = []
-        names = self.feature_names()
-        if len(names) != len(inp_layers ): 
-            raise ValueError("Inconsistency in number of layers between inp_layers and feature names")
-        thresh = 40000.
-        dims = {x: self.feature_dim(x) for x in names} 
-
-        for fndx, feature in enumerate(self.feature_names()):
-            station_df = df.loc[:,feature]
-            xinput = inp_layers[fndx]
-            prepro_name=f"{feature}_prepro" 
-            if feature in ["dcc", "smscg"] and False:
-                feature_layer = Normalization(axis=None,name=prepro_name)  # Rescaling(1.0)
-            elif feature in [ "sac_flow", "ndo"] and thresh is not None:
-                feature_layer = Rescaling(1 / thresh, name=prepro_name)  # Normalization(axis=None)
-            elif feature == "sjr_flow" and thresh is not None:
-                feature_layer = Rescaling(0.25 / thresh, name=prepro_name)  # Normalization(axis=None)                
-            else:
-                feature_layer = Normalization(axis=None,name=prepro_name)
-                feature_layer.adapt(
-                    station_df.to_numpy())
-            layers.append(feature_layer(xinput))
-        return layers
-
-
-    def build_model(self,input_layers, input_data):
-        """ Build or load the model architecture. Or load an old one and extend."""
-        
-        do_load = self.load_model_fname is not None
-        print(f"do_load={do_load}, load_model_fname={self.load_model_fname}")
-        if do_load:
-            print(f"Loading from {self.load_model_fname} for refinement")
-            ann = load_model(self.load_model_fname)
-            ann.load_weights(self.load_model_fname.replace(".h5",".weights.h5"))
-
-            print(ann.summary())
-            return ann
-        else:
-            print(f"Creating from scratch")
-            prepro_layers = self.prepro_layers(input_layers,input_data)          
-            x = layers.Lambda(lambda x: tf.stack(x,axis=-1))(prepro_layers) 
-            x = layers.GRU(units=32, return_sequences=True, 
-                                activation='sigmoid',name='gru_1')(x)
-            x = layers.GRU(units=16, return_sequences=False, 
-                                activation='sigmoid',name='gru_2')(x)
-            x = layers.Flatten()(x)
-            
-            outdim = len(self.output_names)
-            # The regularization is unknown
-            outputs = layers.Dense(units=outdim, name = "ec", activation='elu',
-                                kernel_regularizer = regularizers.l1_l2(l1=0.0001,l2=0.0001))(x)
-            ann = Model(inputs = input_layers, outputs = outputs)
-            print(ann.summary())
-
-        return ann
-
-
-    def fit_model(self,
-                  ann,
-                  fit_input,
-                  fit_output,
-                  test_input,
-                  test_output,
-                  init_train_rate,
-                  init_epochs,
-                  main_train_rate,
-                  main_epochs):  # ,tcb):
-        """ Performs the fit in two stages, one with a faster than normal learning rate and then a normal choice.
-             This seems to work better than the natural Adam adaptation."""
-        ann.compile(
-            optimizer=tf.keras.optimizers.Adamax(learning_rate=init_train_rate), 
-            loss='mae',   # could be mean_absolute_error or mean_squared_error 
-            metrics=['mean_absolute_error','mse'],
-            run_eagerly=True
-        )
-        history = ann.fit(
-            fit_input,
-            fit_output,
-            epochs=init_epochs,
-            batch_size=64,
-            validation_data=(test_input, test_output),
-            verbose=2,
-            shuffle=True
-            )
-        do_main = (main_epochs is not None) and (main_epochs>0)
-        if do_main:
-            ann.compile(
-                optimizer=tf.keras.optimizers.Adamax(learning_rate=main_train_rate), 
-                loss='mae',   # could be mean_absolute_error or mean_squared_error 
-                metrics=['mean_absolute_error','mse'],
-                run_eagerly=False
-            )
-
-            history = ann.fit(
-                fit_input,
-                fit_output,
-                epochs=main_epochs,
-                batch_size=64,
-                validation_data=(test_input, test_output),
-                verbose=2,
-                shuffle=True
-            ) 
-
-        return history, ann
 
 def fit_from_config(
+    builder,
     name,
     input_prefix,       # prefix for input csv files (minus "_1.csv")
     output_prefix, 
@@ -161,21 +33,21 @@ def fit_from_config(
         The creation of the model builder is not configured yet probably not hard with some factories and lists of
         input and output stations."""
 
-    print(f"Processing config {name}")
+    #print(f"Processing config {name}")
     # todo: note derivative
-    if pca_tides_approx:
-        input_names = [ "sac_flow","exports","sjr_flow","cu_flow","tidal_pc1","tidal_pc2","dcc","smscg"]
-    else:
-        input_names = [ "sac_flow","exports","sjr_flow","cu_flow","sf_tidal_energy","sf_tidal_filter","dcc","smscg"]    
+    #if pca_tides_approx:
+    #    input_names = [ "sac_flow","exports","sjr_flow","cu_flow","tidal_pc1","tidal_pc2","dcc","smscg"]
+    #else:
+    #    input_names = [ "sac_flow","exports","sjr_flow","cu_flow","sf_tidal_energy","sf_tidal_filter","dcc","smscg"]    
     
-    output_names = ["x2","pct","mal","god","vol","bdl","nsl2","cse","emm2","tms","anh","jer",
-                    "gzl","sal","frk","bac","rsl","oh4","trp"]
-    plot_locs = ["x2","cse","emm2","jer","bdl","sal","bac"]
-    builder = GRUBuilder2m(input_names=input_names,output_names=output_names,ndays=80)
+    #output_names = ["x2","pct","mal","god","vol","bdl","nsl2","cse","emm2","tms","anh","jer",
+    #                "gzl","sal","frk","bac","rsl","oh4","trp"]
+    #plot_locs = ["x2","cse","emm2","jer","bdl","sal","bac"]
+    #builder = GRUBuilder2m(input_names=input_names,output_names=output_names,ndays=90)
     builder.load_model_fname = load_model_fname
 
     fpattern = f"{input_prefix}_*.csv"
-    df = read_data(fpattern)
+    df = read_data(fpattern,input_mask_regex)
 
     # Uses pre-calculated statistics and PCA weights so that this standardizes across transfer learning
     # No longer recommended; energy and filtered levels are sufficiently orthogonal
@@ -198,7 +70,7 @@ def fit_from_config(
     # built around critical year values or D-1641 standards so that "1.0" is approximately there.
     # More portable and just as effective as relying on period-dependent statistics,
     # but the real solution is to encode it in a layer.
-    for col in output_names:
+    for col in builder.output_names:
         if col == "x2":
             df_out.loc[:,col] = df_out.loc[:,col]/100. 
         elif col in ["mrz","pct","mal","gzl","god","vol","cse","bdl","nsl2"]:
@@ -211,7 +83,7 @@ def fit_from_config(
             df_out.loc[:,col] = df_out.loc[:,col]/1500.
 
     # Do leave-one-fold out validation
-    xvalid_fit_multi(df_in,df_out,builder,plot_folds="all",plot_locs=plot_locs,
+    xvalid_fit_multi(df_in,df_out,builder,
                      out_prefix=output_prefix, 
                      init_train_rate=init_train_rate,
                      init_epochs=init_epochs, 
@@ -247,12 +119,29 @@ def read_config(configfile):
         except yaml.YAMLError as exc:
             print(exc)
 
-def fit_step(step):
-    print(step)
+model_builders = { "GRUBuilder2m" : GRUBuilder2m
+                 }
+
+def model_builder_from_config(builder_config):
+    mbfactory = model_builders[builder_config["builder_name"]]
+    builder = mbfactory(**builder_config["args"])
+    return builder
 
 
 def process_config(configfile,proc_steps): 
+    """ Configure the model builder subclass and run through training stages 
+        Right now the model builder is created at outer scope and does not 
+        readjust the model between steps. 
+        That may limit some transfer learning options.
+    """
+
     config = read_config(configfile)
+    # The model builder config must have a builder_name field    
+    # that represents the builder class. The other data 
+    # should match the needs of the constructor for that class
+    builder_config=config['model_builder_config']
+    builder = model_builder_from_config(builder_config)
+
     proc_all = (proc_steps == "all") 
     if proc_steps is None: 
         raise ValueError("Processing steps or the string 'all' required")
@@ -266,11 +155,17 @@ def process_config(configfile,proc_steps):
             for key in step:
                 if step[key] == "None":
                     step[key] = None
-            fit_from_config(**step)
+            fit_from_config(builder,**step)
 
 def main():
+    #configfile = "restart_config.yml"
+    #process_config(configfile,["dsm2_base","dsm2_restart"])
+
     configfile = "transfer_config.yml"
-    process_config(configfile,["dsm2.schism"])
+    process_config(configfile,["dsm2_base","dsm2.schism"])
+
 
 if __name__ == "__main__":
     main()
+    #print(type(GRUBuilder2m).__name__)    
+

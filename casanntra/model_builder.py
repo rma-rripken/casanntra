@@ -13,15 +13,14 @@ from sklearn.metrics import r2_score, mean_squared_error
 import matplotlib.pyplot as plt
 import os
 
-"""Typical workflow:
+"""Typical workflow. The library does this:
 
 1. Read the raw data in. The data should have a "case" column. datetime and case form a unique index. see read_data.read_data
    ModelBuilder: Nothing to do. Reading data is expected to be done in programatic driver code.
 
-2. Perform any desired pre-model transformations where features become different features. Note that if you are 
-   doing something like g() you may need to do it with something like:
-   df['g'] = df.groupby("case").transform(["ndoi": my_gfunc])  (and make sure to use positivity preserving integration)
-   ModelBuilder: 1. This is model dependent. Having transformations that are not part of TensorFlow is a consistency problem with Java, 
+2. Perform any desired pre-model transformations. Features remain individual inputs, typically, to be concatenated in build_model.
+   
+   There are a lot of notes on the subject of transformations and scaling belowHaving transformations that are not part of TensorFlow is a consistency problem with Java, 
                  so avoid if you can. Do this outside the model
                  2. Need to initialize input_names and output_names to whatever the final names are that will be used by model. 
                  3. Need to make sure feature_dim will return the expected time dim for each feature (scalar) not including batch. For instance, if there are
@@ -36,28 +35,34 @@ import os
                  As noted in the Collab project, you could use the daily LSTM/GRU for everthing and embed 
                  the aggregation into TensorFlow using a convolution filter.
 
-4. Create inputs layers for the model. This is the first TensorFlow layer that receives the input and possibly tacks on
-   some normalization. The product of this step is TensorFlow architecture, not data. However the input data 
-   are passed in to allow scaling to be calculated. The created layers must have one named input 
-   for each conceptual feature ("sac_flow"). The 
-   lags will be part of the dimensionality. The first action within the ANN may concatenate these (or you might transform a 
+4. Create inputs layers for the model in prepro_layers. 
+   This is the first TensorFlow layer that receives the input and is often modified to tack on
+   some normalization. The product of this step is TensorFlow layers, not data. However the input data 
+   are passed in to allow scaling to be calculated or adapted. The created layers must have one named input 
+   for each conceptual feature ("sac_flow").  Lags will be part of the dimensionality of the feature. 
+   
+   The first action within the ANN may concatenate these (or you might transform a 
    subset of the variables using linear layers and then concatenate). The desired dimension is (batch=None, ntime, nfeature).
-   This has caused problems in published papers.
-   ModelBuilder: You may want to over-ride this with tailored scaling or eliminate scaling altogether if you have a 
-                 a transformation in mind (e.g. summing Sac, SJR, exports, CU to become a surrogate for outflow)
-                 and you want to defer scaling until after that so that it is farther in the model.
+   
+   The docstring for base class of prepro_layers() has considerable discussion about scaling and how the challenges
+   of DSM2 and SCHISM/RMA differe and pointing out that what what you purely for DSM2 probably will reduce the potential for the other two 
 
 5. Pre-calculate the cross-validation folds for the inputs. Originally this was done by leave-1-case out but the function
    xvalid_folds() also can split cases  with a target length like 180d (actual splits will be the same length within the case
    and will be at least the target length) which keeps more data available for training. 
-   The identifier of the fold will be appended to the 'fold' column. 
+   
+   In fit_from_config.py, you will also find an option to reduce the number of folds to the number of processors. That will be machine
+   dependent and we (DWR) tend to have big machines, so should re-implement to make specifying a number feasible.
+
+   The identifier of the fold is integer that will be appended to the 'fold' column. The timing of this is after the lags have been
+   calculated 
    ModelBuilder: As long as you have the right columns (datetime,case) and a target size for the fold (e.g. 180d) the examples should be fine.
 
-6. Extract the output columns. Need to discuss if there is a need/ability to scale these.
-   ModelBuilder: If you have set the names of columns this should work. It reindexes the output to match the input.
+6. Extract the output columns. Need to discuss if there is a need/ability to scale these. In the examples it is done separately and that won't 
+   work long term. This is currently done in the implementations and I do the scaling based on the D1641 critical year maximum objective. 
 
-7. Implement build_model (for architecture) and fit_model (for individual model fit). Every fold creates a new model, which is in anticipation of 
-   multithreading.   
+7. Implement build_model (for architecture) and fit_model (for individual model fit). Every fold creates a new copy of the model, 
+   which is needed for safe multithreading.   
    ModelBuilder: build_model is where you define your achitecture after the input layer. fit_model is something you build as well
                  that describes  your fitting process.
 
@@ -80,7 +85,7 @@ def mean_squared_error2(y_true, y_pred):
 
 class ModelBuilder(object):
 
-    def __init__(self,input_names,output_names):
+    def __init__(self,input_names,output_names,load_model_fname=None):
         print("here we are in super()")
         self.input_names = input_names
         self.output_names = output_names
@@ -88,9 +93,7 @@ class ModelBuilder(object):
         self.nwindows = -1
         self.window_length = -1 
         self.ntime = 0
-        
-
-
+        self.load_model_fname = load_model_fname
 
 
     def raw_data_to_features(self, data):
@@ -149,7 +152,35 @@ class ModelBuilder(object):
 
 
     def prepro_layers(self, inp_layers, df):
-        """Examples of processing dataframe with multiindex of locations and lags into normalized inputs"""
+        """ Create the preprocessing layers, one per location, which will be concatenated later.
+            This function performs any sort of special scaling. Here the superclass is overridden.
+
+            Scaling for Bay-Delta problems is inherantly custom. Prior work has proceeded on the 
+            hope that one can use a "best practice" like Normalize (mean and std). These are 
+            questionably appropriate because the flow variables saturate an order of magnitude lower than
+            their upper limits. (e.g. above 40,000cfs for Sac). 
+
+            For DSM2, which can't model low X2, the challenge is to try to saturate at high outflow and 
+            scale the inflows so that the salinity-affecting range is some reasonable (0-1 ish) range.
+             
+            Scaling rivers with volatile statistics does not achieve this. For instance, Sac River 
+            flow maximum depends wildly on the choice of year, and if you are doing transfer learning
+            from one group of years to another this is erratic.  The range could be as much as 300,000 
+            which compresses the portion pertinent for salinity management into Q' < 0.1. Above this 
+            number, DSM2 doesn't have any variables that are sensitive to the inputs ... so in a sense
+            you might even be better off omitting these data since they don't help the solve.
+
+            One of the original solutions to this was to just use a threshold like 40,000cfs for the Sacramento River 
+            and 10,000cfs for the SJR. It works well in DSM2. The required saturation above 70kcfs seems to happen
+            by good fortune. 
+             
+            When you anticipate transferring from DSM2 to SCHISM/RMA you might plan for the big difference in
+            the ability of those to models to reproduce X2 < 55km, which means that they have meaningful 
+            gradients for training under much larger flows than DSM2 does. In fact they might (?) be hobbled 
+            by a 40kcfs saturation. An example custom function based on modified exponential decay is 
+            available in scaling.py and an example of its use may be found, sometiems commented, in fit_from_config.py. 
+    
+        """
         layers = []
         names = self.feature_names()
         if len(names) != len(inp_layers ): 
@@ -385,69 +416,148 @@ class ModelBuilder(object):
 
 #########################################################
 
+class GRUBuilder2(ModelBuilder):
+    """
+    This model builder is the current (2025-01-20) standard recursive model
+    """
 
+    def __init__(self,input_names,output_names,ndays,load_model_fname=None):
+        super().__init__(input_names,output_names,load_model_fname)
+        self.ntime = ndays                  
+        self.ndays = ndays                  # Number of individual days
+        self.nwindows = 0                   # Number of windows, always zero for recursive
+        self.window_length = 0              # Length of each windows
+        self.reverse_time_inputs = False    # Reorder days looking backward. 
+                                            # False for recursive, True (by convention) for MLP
+        self.custom_objects={"ModifiedExponentialDecayLayer": ModifiedExponentialDecayLayer,
+                             "TunableModifiedExponentialDecayLayer": TunableModifiedExponentialDecayLayer} 
+                       # Ideally, Empty references to be filled in during build and passed to load_model             
+        
+    def prepro_layers(self, inp_layers, df):
+        """ Create the preprocessing layers, one per location, which will be concatenated later.
+            This function performs any sort of special scaling. Here the superclass is overridden.
+            See the base class comments in bodel_builder.py for discussion. 
+        """
+        layers = []
+        names = self.feature_names()
+        if len(names) != len(inp_layers ): 
+            raise ValueError("Inconsistency in number of layers between inp_layers and feature names")
+        thresh = 40000.
+        dims = {x: self.feature_dim(x) for x in names} 
 
-class GRUBuilder(ModelBuilder):
+        for fndx, feature in enumerate(self.feature_names()):
+            station_df = df.loc[:,feature]
+            xinput = inp_layers[fndx]
+            prepro_name=f"{feature}_prepro" 
+            if feature in ["dcc", "smscg"] and False:
+                feature_layer = Normalization(axis=None,name=prepro_name)  # Rescaling(1.0)
+            elif feature in [ "sac_flow", "ndo"] and thresh is not None:
+                # Define the model. Use the test_scaling file to refine parameters
+                feature_layer = ModifiedExponentialDecayLayer(a=1.e-5, b=70000., name=prepro_name)
+                #feature_layer = Rescaling(1 / thresh, name=prepro_name)  # Normalization(axis=None)
+            elif feature == "sjr_flow" and thresh is not None:
+                feature_layer = ModifiedExponentialDecayLayer(a=1.e-5, b=40000., name=prepro_name)
+                #feature_layer = Rescaling(0.25 / thresh, name=prepro_name)  # Normalization(axis=None)
+            elif feature == "exports":
+                feature_layer = Rescaling(0.0001, name=prepro_name)
+            elif feature == "delta_cu":
+                freature_layer = Rescaling(1/3000.,name=prepro_name)                
+            else:
+                feature_layer = Normalization(axis=None,name=prepro_name)
+                feature_layer.adapt(
+                    station_df.to_numpy())
+            layers.append(feature_layer(xinput))
+        return layers
 
-    def __init__(self,input_names,output_names,ndays):
-        super().__init__(input_names,output_names)
-        self.ntime = ndays
-        self.ndays = ndays
-        self.nwindows = 0
-        self.window_length = 0
-        self.reverse_time_inputs = False
 
     def build_model(self,input_layers, input_data):
-
-        prepro_layers = self.prepro_layers(input_layers,input_data)          
-        x = layers.Lambda(lambda x: tf.stack(x,axis=-1))(prepro_layers) 
-
-        x = layers.GRU(units=8, return_sequences=True, #dropout=0.2, recurrent_dropout=0.2,
-                            activation='sigmoid')(x)
-        x = layers.GRU(units=12, return_sequences=False, #dropout=0.2, recurrent_dropout=0.2,
-                            activation='sigmoid')(x)
-        x = layers.Flatten()(x)
+        """ Build or load the model architecture. Or load an old one and extend."""
         
-        outdim = len(self.output_names)
-        # The regularization is unknown
-        outputs = layers.Dense(units=outdim, name = "ec", activation='relu',kernel_regularizer = regularizers.l1_l2(l1=0.001,l2=0.001))(x)
-        ann = Model(inputs = input_layers, outputs = outputs)
-        print(ann.summary())
+        do_load = self.load_model_fname is not None
+        print(f"do_load={do_load}, load_model_fname={self.load_model_fname}")
+        if do_load:
+            print(f"Loading from {self.load_model_fname} for refinement")
+            ann = load_model(self.load_model_fname,custom_objects=self.custom_objects)
+            ann.load_weights(self.load_model_fname.replace(".h5",".weights.h5"))
+
+            print(ann.summary())
+            return ann
+        else:
+            print(f"Creating from scratch")
+            prepro_layers = self.prepro_layers(input_layers,input_data)          
+            x = layers.Lambda(lambda x: tf.stack(x,axis=-1))(prepro_layers) 
+            x = layers.GRU(units=32, return_sequences=True, 
+                                activation='sigmoid',name='gru_1')(x)
+            x = layers.GRU(units=16, return_sequences=False, 
+                                activation='sigmoid',name='gru_2')(x)
+            x = layers.Flatten()(x)
+            
+            outdim = len(self.output_names)
+            # The regularization is unknown
+            outputs = layers.Dense(units=outdim, name = "ec", activation='elu',
+                                kernel_regularizer = regularizers.l1_l2(l1=0.0001,l2=0.0001))(x)
+            ann = Model(inputs = input_layers, outputs = outputs)
+            print(ann.summary())
+
+        return ann
+
+
+    def fit_model(self,
+                  ann,
+                  fit_input,
+                  fit_output,
+                  test_input,
+                  test_output,
+                  init_train_rate,
+                  init_epochs,
+                  main_train_rate,
+                  main_epochs):  # ,tcb):
+        """ Performs the fit in two stages, one with a faster than normal learning rate and then a normal choice.
+             This seems to work better than the natural Adam adaptation."""
         ann.compile(
-            optimizer=tf.keras.optimizers.Adamax(learning_rate=0.008), 
+            optimizer=tf.keras.optimizers.Adamax(learning_rate=init_train_rate,clipnorm=1.0), 
             loss='mae',   # could be mean_absolute_error or mean_squared_error 
             metrics=['mean_absolute_error','mse'],
             run_eagerly=True
         )
-        return ann
-
-
-    def fit_model(self,ann,fit_input,fit_output,test_input,test_output,nepochs=200):  # ,tcb):
         history = ann.fit(
             fit_input,
             fit_output,
-            epochs=nepochs,
-            batch_size=32,
+            epochs=init_epochs,
+            batch_size=64,
             validation_data=(test_input, test_output),
             verbose=2,
             shuffle=True
             )
+        do_main = (main_epochs is not None) and (main_epochs>0)
+        if do_main:
+            ann.compile(
+                optimizer=tf.keras.optimizers.Adamax(learning_rate=main_train_rate), 
+                loss='mae',   # could be mean_absolute_error or mean_squared_error 
+                metrics=['mean_absolute_error','mse'],
+                run_eagerly=False
+            )
+
+            history = ann.fit(
+                fit_input,
+                fit_output,
+                epochs=main_epochs,
+                batch_size=64,
+                validation_data=(test_input, test_output),
+                verbose=2,
+                shuffle=True
+            ) 
+
         return history, ann
 
 ###########################################################################################
 
-
-class MLPBuilder(ModelBuilder):
+class MLPBuilder1(ModelBuilder):
     """ Example ModelBuilder using CalSim-like MLP. """
 
     def __init__(self,input_names,output_names,ndays,nwindows,window_length):
-        super().__init__(input_names,output_names)
-        print("Setting params")
-        self.ndays = ndays
-        self.nwindows = nwindows
-        self.window_length = window_length
-        self.ntime = ndays + nwindows
-        self.reverse_time_inputs = True
+        super().__init__(input_names,output_names,ndays,nwindows,window_length)
+
 
     def build_model(self,input_layers, input_data):
         """ Builds the standard CalSIM ANN
@@ -465,22 +575,22 @@ class MLPBuilder(ModelBuilder):
         x = layers.Concatenate()(prepro_layers) 
         
         # First hidden layer 
-        x = Dense(units=6, activation='sigmoid', input_dim=x.shape[1], 
+        x = Dense(units=12, activation='linear', input_dim=x.shape[1], 
                   kernel_initializer="he_normal",
-                  kernel_regularizer = regularizers.l1_l2(l1=0.001,l2=0.00001),
+                  #kernel_regularizer = regularizers.l1_l2(l1=0.001,l2=0.00001),
                   name="hidden1")(x)
         x = tf.keras.layers.BatchNormalization()(x)
 
         # Second hidden layer 
         x = Dense(units=8, activation='sigmoid', kernel_initializer="he_normal",
-                  kernel_regularizer = regularizers.l1_l2(l1=0.001,l2=0.00001),
+                  #kernel_regularizer = regularizers.l1_l2(l1=0.001,l2=0.00001),
                   name="hidden2")(x) 
         x = tf.keras.layers.BatchNormalization(name="batch_normalize")(x)
 
-        # Output layer with 1 neuron
+        # Output layer with 1 neuron per output
         output = Dense(units=outdim,name="ec",activation="relu")(x)
         ann = Model(inputs = input_layers, outputs = output)
-
+        print(ann.summary())
         ann.compile(
             optimizer=tf.keras.optimizers.Adamax(learning_rate=0.002), 
             loss="mae", 
@@ -503,3 +613,4 @@ class MLPBuilder(ModelBuilder):
                 )
         
         return history, ann
+
