@@ -2,8 +2,13 @@
 from casanntra.read_data import read_data
 import matplotlib.pyplot as plt
 
+def difference(x):
+    return x.diff().bfill()
+
 fpattern = "dsm2_base_*.csv"
+fpattern = "schism_base_*.csv"
 df = read_data(fpattern)
+df['sf_dsub'] = df.groupby('case')['sf_tidal_filter'].transform(difference)
 
 fig,((ax0,ax0a),(ax1,ax1a),(ax2,ax2a)) = plt.subplots(3,2)
 ax0.hist(df.jer,bins=15,range=(0,4000))

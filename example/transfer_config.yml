@@ -1,7 +1,43 @@
+model_builder_config:
+  # This is the configuration of the ModelBuilder subclass that builds the original architecture
+  builder_name: GRUBuilder2m
+  args:
+    input_names: 
+    - sac_flow
+    - exports
+    - sjr_flow
+    - cu_flow
+    - sf_tidal_energy
+    - sf_tidal_filter
+    - dcc 
+    - smscg
+    output_names:
+    - x2
+    - pct
+    - mal
+    - god
+    - vol
+    - bdl
+    - nsl2
+    - cse
+    - emm2
+    - tms
+    - anh
+    - jer
+    - gzl
+    - sal
+    - frk
+    - bac
+    - rsl
+    - oh4
+    - trp
+    ndays: 90
+
+
 steps:
 - name: dsm2_base
   input_prefix: dsm2_base
-  input_mask_regex: None     # regex to filter out (not implemented)
+  input_mask_regex: None    # list of regex to filter out files that match particular patterns
   output_prefix: dsm2_base_gru2
   save_model_fname: dsm2_base_gru2.h5
   load_model_fname: None
@@ -11,10 +47,10 @@ steps:
   init_train_rate: 0.008
   init_epochs: 10
   main_train_rate: 0.001
-  main_epochs: 110
+  main_epochs: 100
 - name: dsm2.schism
   input_prefix: schism_base
-  input_mask_regex: None     # regex to filter out (not implemented)
+  input_mask_regex: None
   output_prefix: dsm2.schism_base_gru2
   save_model_fname: dsm2.schism_base_gru2.h5
   load_model_fname: dsm2_base_gru2.h5
@@ -27,7 +63,7 @@ steps:
   main_epochs: 0    
 - name: base.suisun
   input_prefix: schism_suisun
-  input_mask_regex: None     # regex to filter out (not implemented)
+  input_mask_regex: None
   output_prefix: schism_base.suisun_gru2
   save_model_fname: schism_base.suisun.gru2.h5
   load_model_fname: dsm2.schism_base_gru2.h5

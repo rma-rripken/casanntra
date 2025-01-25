@@ -3,7 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # Define individual functions
-def modified_exponential_decay(x, a=5e-5, b=80000):
+#def modified_exponential_decay(x, a=5e-6, b=40000):  #SJR
+def modified_exponential_decay(x, a=5e-7, b=70000): #SAC/NDO
     exp_decay = tf.exp(-a * x)
     exp_decay_tapered = (exp_decay - tf.exp(-a * b)) / (1 - tf.exp(-a * b))
     return exp_decay_tapered
