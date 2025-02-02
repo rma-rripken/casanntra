@@ -8,7 +8,10 @@ data_repo = os.path.split(__file__)[0]+"/../data"
 def filter_files(fnames,masks,verbose=False):
     if masks is None or masks == "None": 
         return fnames
+    if isinstance(masks,str):
+        masks = [masks]
     mask_res=[re.compile(x) for x in masks]
+
     def exclude(mask_res,f):
         masked = any([mr.match(os.path.split(f)[1]) for mr in mask_res])
         if verbose:
@@ -40,7 +43,6 @@ def read_data(file_pattern,input_mask_regex,data_dir = data_repo):
         dss.append(x) 
     df = pd.concat(dss,axis = 0)
     df = df.reset_index(drop=True)
-
-
+    
     return df
 
