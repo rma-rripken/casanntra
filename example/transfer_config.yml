@@ -37,9 +37,7 @@ model_builder_config:
 steps:
 - name: dsm2_base
   input_prefix: dsm2_base
-  input_mask_regex: None
-  # Example mask that would filter out dsm2_base_1.csv, dsm2_base_10.csv ...
-  #input_mask_regex: ["dsm2_base_1.*", "dsm2_basdsm2_base_9.*"]    # list of regex to filter out files that match particular patterns
+  input_mask_regex: [dsm2_base_9.\.csv,dsm2_base_100\.csv,dsm2_base_100.\.csv]    # list of regex to filter out files that match particular patterns
   output_prefix: dsm2_base_gru2
   save_model_fname: dsm2_base_gru2.h5
   load_model_fname: None
@@ -56,11 +54,11 @@ steps:
   output_prefix: dsm2.schism_base_gru2
   save_model_fname: dsm2.schism_base_gru2.h5
   load_model_fname: dsm2_base_gru2.h5
-  pool_size: 10
+  pool_size: 11
   pool_aggregation: False
   target_fold_length: 180d
   init_train_rate: 0.001  # Low rate for transfer learning
-  init_epochs: 20
+  init_epochs: 30
   main_train_rate: None
   main_epochs: 0    
 - name: base.suisun
@@ -72,8 +70,8 @@ steps:
   pool_size: 11
   pool_aggregation: False
   target_fold_length: 180d
-  init_train_rate: 0.001  # Only one round at low learn rate for transfer learning
-  init_epochs: 20
-  main_train_rate: None
-  main_epochs: 0  
+  init_train_rate: 0.0005  # Only one round at low learn rate for transfer learning
+  init_epochs: 10
+  main_train_rate: 0.001
+  main_epochs: 40
   

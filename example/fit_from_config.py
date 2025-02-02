@@ -7,7 +7,8 @@ from casanntra.read_data import read_data
 from casanntra.model_builder import *
 from casanntra.xvalid_multi import xvalid_fit_multi,bulk_fit
 from casanntra.tide_transforms import *
-from casanntra.scaling import ModifiedExponentialDecayLayer,TunableModifiedExponentialDecayLayer
+from casanntra.scaling import (ModifiedExponentialDecayLayer,
+                              TunableModifiedExponentialDecayLayer)
 from keras.models import load_model
 from sklearn.decomposition import PCA
 
@@ -162,8 +163,9 @@ def main():
     #process_config(configfile,["dsm2_base","dsm2_restart"])
 
     configfile = "transfer_config.yml"
-    process_config(configfile,["dsm2_base","dsm2.schism"])
-
+    #process_config(configfile,["dsm2_base","dsm2.schism"])
+    process_config(configfile,["dsm2.schism","base.suisun"])
+    process_config(configfile,["base.suisun"])
 
 if __name__ == "__main__":
     main()

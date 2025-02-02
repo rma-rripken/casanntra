@@ -1,72 +1,86 @@
-
 import matplotlib.pyplot as plt
 import pandas as pd
 import sys
 
-output_prefixs = {}
-output_prefix0 = "dsm2.schism_base_gru2"
-output_prefix1 = "dsm2_base_gru2"
-output_prefixs["dsm2.schism"] = output_prefix0
-output_prefixs["dsm2"] = output_prefix1
-
-
-station = "x2"
-if len(sys.argv) > 1: station = sys.argv[1]
-if len(sys.argv) > 2: 
-   model = sys.argv[2]
-   output_prefix = output_prefixs[model]
-
-#model_data=pd.read_csv("output/schism_mlp1m.mae_xvalid_ref_out.csv",index_col=0, parse_dates=['datetime'],header=0)
-#ann_data=pd.read_csv("output/schism_mlp1m.mae_xvalid.csv",index_col=0, parse_dates=['datetime'],header=0)
-model_data=pd.read_csv(f"{output_prefix}_xvalid_ref_out.csv",index_col=0, parse_dates=['datetime'],header=0)
-ann_data=pd.read_csv(f"{output_prefix}_xvalid.csv",index_col=0, parse_dates=['datetime'],header=0)
-
-
-
-full_names = {
-  "cse": "Collinsville",
-  "rsl":"Rock slough",
-  "oh4": "Old@HW4",
-  "frk": "Franks Tract",
-  "bac": "Old R. at Bacon",
-  "x2": "X2",
-  "emm2": "Emmaton",
-  "jer" : "Jersey Point",
-  "bdl" : "Beldon's Landing",
-  "mal" : "Mallard",
-  "hll" : "Holland Cut",
-  "sal" : "San Andreas Landing",
-  "bdl" : "Beldon's Landing",
-  "god" : "Godfather Sl",
-  "gzl" : "Grizzly Bay",
-  "vol" : "Suisun Sl at Volanti"
+# Mapping of models to output file prefixes
+OUTPUT_PREFIXES = {
+    "dsm2": "dsm2_base_gru2",
+    "dsm2.schism": "dsm2.schism_base_gru2",
+    "base.suisun": "schism_base.suisun_gru2"
 }
 
+# Mapping of station short names to full names
+STATION_NAMES = {
+    "cse": "Collinsville",
+    "rsl": "Rock Slough",
+    "oh4": "Old@HW4",
+    "frk": "Franks Tract",
+    "bac": "Old R. at Bacon",
+    "x2": "X2",
+    "emm2": "Emmaton",
+    "jer": "Jersey Point",
+    "bdl": "Beldon's Landing",
+    "mal": "Mallard",
+    "hll": "Holland Cut",
+    "sal": "San Andreas Landing",
+    "god": "Godfather Slough",
+    "gzl": "Grizzly Bay",
+    "vol": "Suisun Sl at Volanti"
+}
 
-title = full_names[station]
+def load_data(model: str, station: str):
+    """Loads model and ANN data for the given model and station."""
+    output_prefix = OUTPUT_PREFIXES.get(model, None)
+    if output_prefix is None:
+        raise ValueError(f"Invalid model: {model}")
+    
+    model_data = pd.read_csv(
+        f"{output_prefix}_xvalid_ref_out.csv", index_col=0, parse_dates=['datetime'], header=0
+    )
+    ann_data = pd.read_csv(
+        f"{output_prefix}_xvalid.csv", index_col=0, parse_dates=['datetime'], header=0
+    )
+    return model_data, ann_data
 
-
-ncase = 7
-
-fig,axes = plt.subplots(ncase,sharex = False,constrained_layout=True,figsize=(8,9))
-nax = len(axes)
-
-for i in range(ncase):
-    print(i)
-    icase = i + 1 +i*10 + 11 
-    #icase = i+1
-    sub_mod = model_data.loc[model_data.case==icase,:]
-    sub_ann = ann_data.loc[ann_data.case==icase,:]
-    ax = axes[i]
-    if i == 0: ax.set_title(title)
-    ax.plot(sub_mod.datetime,sub_mod[station])
-    ax.plot(sub_ann.datetime,sub_ann[station])
-    ax.set_ylabel("Norm EC")
-    if i == 0:
-       ax.set_title(f"Station={station}, Case = {icase}")
-    else:
+def plot_results(axes, model_data, ann_data, station, model, linestyle='-'):
+    """Plots the model vs ANN results for a given station and model on the same figure."""
+    title = STATION_NAMES.get(station, station)
+    
+    for i, ax in enumerate(axes):
+        icase = i + 1
+        if model in ["rma","dsm2.schism","base.suisun"]:
+            grabcase = icase
+        else:
+            grabcase = 1000 + icase
+        print("Model: ", model, "Case being plotted: ",grabcase)
+        sub_mod = model_data[model_data.case == grabcase]
+        sub_ann = ann_data[ann_data.case == grabcase]
+        if i == 0:
+            ax.set_title(title)
+        ax.plot(sub_mod.datetime, sub_mod[station], linestyle=linestyle, label=f"{model} Model",color=str(0.1))
+        ax.plot(sub_ann.datetime, sub_ann[station], linestyle=linestyle, label=f"{model} ANN")
+        ax.set_ylabel("Norm EC")
         ax.set_title(f"Case = {icase}")
+    
+    axes[0].legend()
 
-plt.tight_layout()
-plt.show()
+def main():
+    """Main execution function to parse user input and generate plots."""
+    station = sys.argv[1] if len(sys.argv) > 1 else "x2"
+    models = sys.argv[2:] if len(sys.argv) > 2 else ["dsm2"]
+    
+    if len(models) > 2:
+        raise ValueError("Only one or two models can be selected for visualization.")
+    
+    n_cases = 7
+    fig, axes = plt.subplots(n_cases, sharex=False, constrained_layout=True, figsize=(8, 9))
+    
+    for i, model in enumerate(models):
+        model_data, ann_data = load_data(model, station)
+        linestyle = '-' if i == 0 else '--'  # Solid for first, dashed for second
+        plot_results(axes, model_data, ann_data, station, model, linestyle)
+    
+    plt.show()
 
+if __name__ == "__main__":
+    main()
