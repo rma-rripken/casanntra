@@ -5,7 +5,8 @@ from keras.models import load_model
 import numpy as np
 import tensorflow as tf
 import tensorflow.keras.layers as layers
-from tensorflow.keras.layers import Dense, Input
+
+from tensorflow.keras.layers import Dense, Input, Lambda
 from tensorflow.keras.layers.experimental.preprocessing import Normalization, IntegerLookup, Rescaling #CategoryEncoding
 from tensorflow.keras import regularizers
 from tensorflow.keras.losses import MeanSquaredLogarithmicError
@@ -13,6 +14,7 @@ from tensorflow.keras.models import Model, load_model
 from sklearn.metrics import r2_score, mean_squared_error
 import matplotlib.pyplot as plt
 import os
+
 
 """Typical workflow. The library does this:
 
@@ -79,22 +81,59 @@ import os
 
 """
 
+class UnscaleLayer(tf.keras.layers.Layer):
+    def __init__(self, output_scales, **kwargs):
+        super(UnscaleLayer, self).__init__(**kwargs)
+        self.output_scales = tf.constant(output_scales, dtype=tf.float32)
+
+    def call(self, inputs):
+        return inputs * self.output_scales  # ✅ Rescales ANN’s output
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({"output_scales": self.output_scales.numpy().tolist()})
+        return config
+
+
 def mean_squared_error2(y_true, y_pred):
     y_true = tf.cast(y_true, tf.float32)
     return tf.keras.backend.mean(tf.keras.backend.square(y_pred - y_true))
 
 
 class ModelBuilder(object):
-
-    def __init__(self,input_names,output_names,load_model_fname=None):
-        print("here we are in super()")
+    def __init__(self, input_names, output_names, ndays=90):
+        """Base class for model builders, now handling custom object registration."""
         self.input_names = input_names
-        self.output_names = output_names
-        self.ndays = -1         # Subclass should over-ride these
-        self.nwindows = -1
-        self.window_length = -1 
-        self.ntime = 0
-        self.load_model_fname = load_model_fname
+        self.output_names = output_names  # Dict of {output_name: scale_factor}
+        self.ndays = ndays
+        self.load_model_fname = None  # Used for transfer learning
+
+        # ✅ Centralized custom object registration
+        self.custom_objects = {"UnscaleLayer": UnscaleLayer}
+
+    def register_custom_object(self, name, obj):
+        """Allows subclasses to register additional custom objects."""
+        self.custom_objects[name] = obj
+
+    def load_existing_model(self):
+        """Handles model loading and ensures all required custom objects are registered."""
+        if self.load_model_fname is None:
+            return None  # No model to load
+        
+        print(f"Loading model from {self.load_model_fname} with registered custom objects.")
+        base_model = load_model(self.load_model_fname, custom_objects=self.custom_objects)
+        base_model.load_weights(self.load_model_fname.replace(".h5", ".weights.h5"))
+
+        return base_model
+
+
+    def _create_unscaled_layer(self, scaled_output):
+        """Creates an unscaled version of an existing output layer for inference purposes."""
+        output_scales = list(self.output_names.values())  # Extract scale factors
+
+        # ✅ Unscaled output for inference
+        return UnscaleLayer(output_scales, name="unscaled_output")(scaled_output)
+
 
 
     def raw_data_to_features(self, data):
@@ -222,8 +261,12 @@ class ModelBuilder(object):
             layers.append(xinput)
         
         return layers
+    
+    def register_custom_object(self, name, obj):
+        """Allows subclasses to register additional custom objects."""
+        self.custom_objects[name] = obj    
 
-    def build_model(self,input_layers, input_data):
+    def build_model(self, input_layers, input_data, add_unscaled_output=False):
         """ Builds out the architecture after input_layers through the compile. 
            The input_layers are created outside the model to ensure they follow the requested form
            Often the next stage will be to call prepro_layers as in the recursive example, 
@@ -328,6 +371,7 @@ class ModelBuilder(object):
         if "case" not in data:
             data["case"] = 1
 
+
         for case in data.case.unique():
     
             case_df = data.loc[data.case == case]
@@ -338,7 +382,7 @@ class ModelBuilder(object):
         
         if split_in_out:
             df_in = data[["datetime","case","fold"]+self.input_names]      # isolate input
-            df_out = data[["datetime","case","fold"]+self.output_names]    # isolate output
+            df_out = data[["datetime","case","fold"]+list(self.output_names)]    # isolate output
             return df_in,df_out
         else:
             return data
@@ -429,16 +473,18 @@ class GRUBuilder2(ModelBuilder):
         self.nwindows = 0                   # Number of windows, always zero for recursive
         self.window_length = 0              # Length of each windows
         self.reverse_time_inputs = False    # Reorder days looking backward. 
-                                            # False for recursive, True (by convention) for MLP
-        self.custom_objects={"ModifiedExponentialDecayLayer": ModifiedExponentialDecayLayer,
-                             "TunableModifiedExponentialDecayLayer": TunableModifiedExponentialDecayLayer} 
-                       # Ideally, Empty references to be filled in during build and passed to load_model             
+                                            # False for recursive, True (by convention) for 
+        self.register_custom_object("ModifiedExponentialDecayLayer", ModifiedExponentialDecayLayer)
+        self.register_custom_object("TunableModifiedExponentialDecayLayer", TunableModifiedExponentialDecayLayer)
         
     def prepro_layers(self, inp_layers, df):
         """ Create the preprocessing layers, one per location, which will be concatenated later.
             This function performs any sort of special scaling. Here the superclass is overridden.
             See the base class comments in bodel_builder.py for discussion. 
         """
+        if df is None:
+            raise ValueError("Invalid (None) data frame.")
+        
         layers = []
         names = self.feature_names()
         if len(names) != len(inp_layers ): 
@@ -447,6 +493,8 @@ class GRUBuilder2(ModelBuilder):
         dims = {x: self.feature_dim(x) for x in names} 
 
         for fndx, feature in enumerate(self.feature_names()):
+            if not feature in df.columns: 
+                raise ValueError(f"Feature not found in dataframe: {feature}")
             station_df = df.loc[:,feature]
             xinput = inp_layers[fndx]
             prepro_name=f"{feature}_prepro" 
@@ -469,6 +517,7 @@ class GRUBuilder2(ModelBuilder):
                     station_df.to_numpy())
             layers.append(feature_layer(xinput))
         return layers
+
 
 
     def build_model(self,input_layers, input_data):
@@ -504,28 +553,32 @@ class GRUBuilder2(ModelBuilder):
 
 
     def fit_model(self,
-                  ann,
-                  fit_input,
-                  fit_output,
-                  test_input,
-                  test_output,
-                  init_train_rate,
-                  init_epochs,
-                  main_train_rate,
-                  main_epochs):  # ,tcb)
-        """ Performs the fit in two stages, one with a faster than normal learning rate and then a normal choice.
-             This seems to work better than the natural Adam adaptation."""
-        for item in fit_input.keys():
-            if fit_input[item].isnull().any(axis=None):
-                print("Null data in fit input on key {item}")
-        if fit_output.isnull().any(axis=None):
-            print("Null data in output")
+                ann,
+                fit_input,
+                fit_output,
+                test_input,
+                test_output,
+                init_train_rate,
+                init_epochs,
+                main_train_rate,
+                main_epochs):  
+        """Custom fit_model for MultiStageModelBuilder to support staged learning."""
 
+        # ✅ Select the correct loss function
+        if self.transfer_type == "mtl":
+            loss_function = weighted_mtl_loss
+        elif self.transfer_type == "contrastive":
+            loss_function = contrastive_loss
+        else:
+            loss_function = "mae"  # Default for DSM2 base
 
+        print(f"Using loss function: {loss_function}")
+
+        # ✅ Initial training phase (faster learning rate)
         ann.compile(
-            optimizer=tf.keras.optimizers.Adamax(learning_rate=init_train_rate,clipnorm=1.0), 
-            loss='mae',   # could be mean_absolute_error or mean_squared_error 
-            metrics=['mean_absolute_error','mse'],
+            optimizer=tf.keras.optimizers.Adamax(learning_rate=init_train_rate, clipnorm=1.0), 
+            loss=loss_function,
+            metrics=['mae', 'mse'],
             run_eagerly=True
         )
         history = ann.fit(
@@ -536,16 +589,16 @@ class GRUBuilder2(ModelBuilder):
             validation_data=(test_input, test_output),
             verbose=2,
             shuffle=True
-            )
-        do_main = (main_epochs is not None) and (main_epochs>0)
-        if do_main:
+        )
+
+        # ✅ Main training phase (slower learning rate)
+        if main_epochs is not None and main_epochs > 0:
             ann.compile(
                 optimizer=tf.keras.optimizers.Adamax(learning_rate=main_train_rate), 
-                loss='mae',   # could be mean_absolute_error or mean_squared_error 
-                metrics=['mean_absolute_error','mse'],
+                loss=loss_function,
+                metrics=['mae', 'mse'],
                 run_eagerly=False
             )
-
             history = ann.fit(
                 fit_input,
                 fit_output,
@@ -554,9 +607,10 @@ class GRUBuilder2(ModelBuilder):
                 validation_data=(test_input, test_output),
                 verbose=2,
                 shuffle=True
-            ) 
+            )
 
         return history, ann
+
 
 ###########################################################################################
 

@@ -93,9 +93,9 @@ def bulk_fit(builder,df_in,df_out,out_prefix,fit_in,fit_out,test_in,test_out,
     outputs_xvalid[["datetime","case","fold"]] = outputs_trim[["datetime","case","fold"]]
 
     fit_in = inputs_lagged
-    fit_out = outputs_trim.loc[fit_in.index,builder.output_names]
+    fit_out = outputs_trim.loc[fit_in.index,list(builder.output_names)]
     test_in = inputs_lagged
-    test_out = outputs_trim.loc[test_in.index,builder.output_names]
+    test_out = outputs_trim.loc[test_in.index,list(builder.output_names)]
             
 
     # The preprocessing layers are scaled using the full dataset so that the scaling is the same every time
@@ -129,8 +129,9 @@ def xvalid_fit_multi(df_in,df_out,builder,init_train_rate,init_epochs,main_train
        and then evaluating the witheld data
     """
 
-
-    df_out.to_csv(f"{out_prefix}_xvalid_ref_out.csv",float_format="%.3f",
+    ref_out_csv = f"{out_prefix}_xvalid_ref_out.csv"
+    print(ref_out_csv)
+    df_out.to_csv(ref_out_csv,float_format="%.3f",
                   date_format="%Y-%m-%dT%H:%M",header=True,index=True)
 
 
@@ -163,9 +164,9 @@ def xvalid_fit_multi(df_in,df_out,builder,init_train_rate,init_epochs,main_train
             
             #fit_in = fit_in.loc[fit_in.ndo_lag0 < 70000.,:]
             #fit_in = fit_in.loc[fit_in.sac_flow_lag0 < 70000.,:]
-            fit_out = df_out.loc[fit_in.index,builder.output_names]
+            fit_out = df_out.loc[fit_in.index,list(builder.output_names)]
             test_in = inputs_lagged.loc[inputs_lagged.fold == ifold,:]
-            test_out = df_out.loc[test_in.index,builder.output_names]
+            test_out = df_out.loc[test_in.index,list(builder.output_names)]
             
             print(f"ifold={ifold} # train input data rows = {fit_in.shape[0]} # train out rows = {fit_out.shape[0]}")
             print(f"ifold={ifold} # test input data rows = {test_in.shape[0]} # test out rows = {test_out.shape[0]}")

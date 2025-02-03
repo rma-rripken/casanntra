@@ -20,6 +20,30 @@ def filter_files(fnames,masks,verbose=False):
     return [f for f in fnames if not exclude(mask_res, f)]
 
 
+def compute_scenario_differences(df, base_col, suisun_col):
+    """
+    Computes (schism, suisun) - (schism, base) differences.
+    If a case is missing in one scenario, it falls back to using absolute MAE.
+    """
+    df = df.copy()
+    df['scenario_difference'] = None  # Initialize new column
+
+    available_cases = df.groupby("case")
+
+    for case, group in available_cases:
+        base_exists = base_col in group.columns
+        suisun_exists = suisun_col in group.columns
+
+        if base_exists and suisun_exists:
+            df.loc[group.index, 'scenario_difference'] = group[suisun_col] - group[base_col]
+        elif base_exists:
+            df.loc[group.index, 'scenario_difference'] = group[base_col]  # Fall back to absolute MAE
+        elif suisun_exists:
+            df.loc[group.index, 'scenario_difference'] = group[suisun_col]  # Fall back to absolute MAE
+
+    return df
+
+
 def read_data(file_pattern,input_mask_regex,data_dir = data_repo):
     """ Read data
         file_pattern is a pattern for matching
@@ -34,7 +58,6 @@ def read_data(file_pattern,input_mask_regex,data_dir = data_repo):
     if len(fnames) == 0:
         raise ValueError(f"No files found for pattern {file_pattern}")
     for fname in fnames:
-        print(fname)
         x = pd.read_csv(fname,parse_dates=['datetime'],sep=',')
         if x.isnull().any(axis=None):  
             raise ValueError(f"Null values from file {fname}")

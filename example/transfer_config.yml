@@ -1,77 +1,102 @@
-model_builder_config:
-  # This is the configuration of the ModelBuilder subclass that builds the original architecture
-  builder_name: GRUBuilder2
-  args:
-    input_names: 
-    - sac_flow
-    - exports
-    - sjr_flow
-    - cu_flow
-    - sf_tidal_energy
-    - sf_tidal_filter
-    - dcc 
-    - smscg
-    output_names:
-    - x2
-    - pct
-    - mal
-    - god
-    - vol
-    - bdl
-    - nsl2
-    - cse
-    - emm2
-    - tms
-    - anh
-    - jer
-    - gzl
-    - sal
-    - frk
-    - bac
-    - rsl
-    - oh4
-    - trp
-    ndays: 90
+# ===========================
+# TRANSFER LEARNING CONFIGURATION FILE
+# ===========================
+# This file defines the training sequence for staged transfer learning.
+# Each step builds upon prior models, allowing for progressive learning.
+# The user can selectively re-execute steps as needed.
+# ===========================
 
+model_builder_config:
+  # Defines which ModelBuilder subclass is used.
+  builder_name: MultiStageModelBuilder  # Uses a staged learning model
+
+  args:
+    input_names:  # Features (input variables)
+      - sac_flow
+      - exports
+      - sjr_flow
+      - cu_flow
+      - sf_tidal_energy
+      - sf_tidal_filter
+      - dcc
+      - smscg
+    output_names:  # Output variables with their scaling factors
+      x2: 100.0    # Normalized based on known physical ranges
+      pct: 12000.0
+      mal: 12000.0
+      god: 12000.0
+      vol: 12000.0
+      bdl: 12000.0
+      nsl2: 12000.0
+      cse: 12000.0
+      emm2: 3000.0
+      tms: 3000.0
+      anh: 3000.0
+      jer: 2500.0
+      gzl: 12000.0
+      sal: 12000.0
+      frk: 2500.0
+      bac: 1500.0
+      rsl: 1500.0
+      oh4: 1500.0
+      trp: 1500.0
+    ndays: 90  # Defines the time window for GRU model
+
+# ===========================
+# TRAINING STEPS
+# ===========================
+# Each step corresponds to a training phase. Models are trained in stages.
+# ===========================
 
 steps:
-- name: dsm2_base
-  input_prefix: dsm2_base
-  input_mask_regex: [dsm2_base_9.\.csv,dsm2_base_100\.csv,dsm2_base_100.\.csv]    # list of regex to filter out files that match particular patterns
-  output_prefix: dsm2_base_gru2
-  save_model_fname: dsm2_base_gru2.h5
-  load_model_fname: None
-  pool_size: 11
-  pool_aggregation: True    # Folds collapsed to pool_size (specify True) or a fixed # (specify integer), helpful for large number of cases
-  target_fold_length: 180d
-  init_train_rate: 0.008
-  init_epochs: 10
-  main_train_rate: 0.001
-  main_epochs: 100
-- name: dsm2.schism
-  input_prefix: schism_base
-  input_mask_regex: None
-  output_prefix: dsm2.schism_base_gru2
-  save_model_fname: dsm2.schism_base_gru2.h5
-  load_model_fname: dsm2_base_gru2.h5
-  pool_size: 11
-  pool_aggregation: False
-  target_fold_length: 180d
-  init_train_rate: 0.001  # Low rate for transfer learning
-  init_epochs: 30
-  main_train_rate: None
-  main_epochs: 0    
-- name: base.suisun
-  input_prefix: schism_suisun
-  input_mask_regex: None
-  output_prefix: schism_base.suisun_gru2
-  save_model_fname: schism_base.suisun.gru2.h5
-  load_model_fname: dsm2.schism_base_gru2.h5
+- name: dsm2_base  # ✅ Step 1: Train DSM2 (1D Model) on its original dataset
+  input_prefix: dsm2_base  # Points to DSM2 training data
+  input_mask_regex: [dsm2_base_9.\.csv, dsm2_base_100\.csv, dsm2_base_100.\.csv]  # Filters input files
+  output_prefix: dsm2_base_gru2  # Prefix for saved results
+  save_model_fname: dsm2_base_gru2.h5  # Final model filename
+  load_model_fname: None  # First model—no prior model to load
+  pool_size: 11  # Number of parallel training threads
+  pool_aggregation: True  # Use pool aggregation for large case counts
+  target_fold_length: 180d  # Cross-validation time fold length
+  init_train_rate: 0.008  # Initial learning rate for warm-up
+  init_epochs: 10  # Short warm-up phase
+  main_train_rate: 0.001  # Standard learning rate for main training phase
+  main_epochs: 100  # Number of epochs for main training phase
+  builder_args:
+    transfer_type: None  # No transfer learning in the base DSM2 training
+
+# --------------------------------------------------------------
+- name: dsm2.schism  # ✅ Step 2: Transfer DSM2 Knowledge to SCHISM (3D Model)
+  input_prefix: schism_base  # Points to SCHISM dataset (aligned with DSM2)
+  input_mask_regex: None  # No need for filtering
+  output_prefix: dsm2.schism_base_gru2  # New model output filename
+  save_model_fname: dsm2.schism_base_gru2.h5  # File to save the transfer-learned model
+  load_model_fname: dsm2_base_gru2.h5  # Start from DSM2 model
   pool_size: 11
   pool_aggregation: False
   target_fold_length: 180d
-  init_train_rate: 0.0005  # Only one round at low learn rate for transfer learning
-  init_epochs: 10
-  main_train_rate: 0.001
-  main_epochs: 40
-  
+  init_train_rate: 0.001  # Lower learning rate to prevent catastrophic forgetting
+  init_epochs: 30  # Transfer learning often requires fewer epochs
+  main_train_rate: None  # Only a single training phase
+  main_epochs: 0  # No separate main training phase
+  builder_args:
+    transfer_type: regular  # Standard transfer learning
+    save_modified_orig_model_fname: None  # No need to modify the DSM2 model
+
+# --------------------------------------------------------------
+- name: base.suisun  # ✅ Step 3: Transfer SCHISM (Base Scenario) to SCHISM (Suisun Scenario)
+  input_prefix: schism_suisun  # Dataset for the Suisun scenario
+  input_mask_regex: None
+  output_prefix: schism_base.suisun_gru2  # New model name
+  save_model_fname: schism_base.suisun_gru2.h5  # Final model filename
+  load_model_fname: dsm2.schism_base_gru2.h5  # Start from SCHISM (Base)
+  pool_size: 11
+  pool_aggregation: False
+  target_fold_length: 180d
+  init_train_rate: 0.0005  # Even lower learning rate for fine-tuning
+  init_epochs: 10  # Short fine-tuning phase
+  main_train_rate: 0.001  # Main learning rate for adaptation
+  main_epochs: 40  # Extended training for scenario adaptation
+  builder_args:
+    transfer_type: contrastive  # Use contrastive learning to retain differences
+    save_modified_orig_model_fname: schism_base-suisun_gru2.h5  # Keep modified version of SCHISM (Base)
