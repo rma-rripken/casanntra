@@ -1,6 +1,7 @@
 
 # Training data for ANNs
 
+These are the conventions as per CalSim ANN training.
 
 | Variable Name    | Description                                                                   |
 |------------------|-------------------------------------------------------------------------------|
@@ -15,7 +16,7 @@
 | delta_cu         | Net Delta Consumptive Use (cfs) |
 | ndo              | Net Delta Outflow as calculated by boundary inflows (cfs) |
 | dcc              | Delta Cross Channel gate operations (0=Closed, 1=Open) |
-| smscg            | Suisun Marsh Salinity Control Gate operations (0=Closed, 1=Open) |
+| smscg            | Suisun Marsh Salinity Control Gate operations (0=Open, 1=Tidally Operated) |
 | sf_tidal_energy  | Tidal energy of SFFPX station/boundary. Calculated over stage in feet. < (z- <z>)^2 >, where <> is a low-pass filter |
 | sf_tidal_filter  | Tidal energy of SFFPX station/boundary. Calculated over stage in feet. <z>, where <> is a low-pass filter |
 | x2               | X2 calculated from model EC results |
