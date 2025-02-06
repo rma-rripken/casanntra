@@ -1,6 +1,6 @@
 import pandas as pd
 from casanntra.read_data import read_data
-
+from casanntra.scaling import *
 import numpy as np
 import tensorflow as tf
 import tensorflow.keras.layers as layers
@@ -8,7 +8,7 @@ from tensorflow.keras.layers import Dense, Input
 from tensorflow.keras.layers.experimental.preprocessing import Normalization, IntegerLookup, Rescaling #CategoryEncoding
 from tensorflow.keras import regularizers
 from tensorflow.keras.losses import MeanSquaredLogarithmicError
-from tensorflow.keras.models import Model
+from tensorflow.keras.models import Model, load_model
 from sklearn.metrics import r2_score, mean_squared_error
 import matplotlib.pyplot as plt
 import os
@@ -511,9 +511,16 @@ class GRUBuilder2(ModelBuilder):
                   init_train_rate,
                   init_epochs,
                   main_train_rate,
-                  main_epochs):  # ,tcb):
+                  main_epochs):  # ,tcb)
         """ Performs the fit in two stages, one with a faster than normal learning rate and then a normal choice.
              This seems to work better than the natural Adam adaptation."""
+        for item in fit_input.keys():
+            if fit_input[item].isnull().any(axis=None):
+                print("Null data in fit input on key {item}")
+        if fit_output.isnull().any(axis=None):
+            print("Null data in output")
+
+
         ann.compile(
             optimizer=tf.keras.optimizers.Adamax(learning_rate=init_train_rate,clipnorm=1.0), 
             loss='mae',   # could be mean_absolute_error or mean_squared_error 
