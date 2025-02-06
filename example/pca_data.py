@@ -32,13 +32,20 @@ data_normalized.loc[:,"sf_tidal_energy"] -=  mean_energy
 data_normalized.loc[:,"sf_tidal_energy"] /=  std_energy
 data_normalized = data_normalized.drop("case",axis=1)
 
+fig, ax = plt.subplots(1)
+ax.scatter(data_normalized.sf_tidal_energy,data_normalized.sf_tidal_filter)
+plt.show()
 
 # Perform PCA
 pca = PCA(n_components=2)
 pca.fit(data_normalized)
-pca_loadings = pca.fit_transform(data_normalized)
 print(pca.components_)
+pca_loadings = pca.fit_transform(data_normalized)
+
+print("Explained variance ratio:")
+print(pca.explained_variance_ratio_)
 print(data_normalized.columns)
+
 pca_df = pd.DataFrame(index=data_normalized.index,
     data={'PC1': pca_loadings[:, 0],
     'PC2': pca_loadings[:, 1]})
