@@ -1,6 +1,6 @@
 model_builder_config:
   # This is the configuration of the ModelBuilder subclass that builds the original architecture
-  builder_name: GRUBuilder2m
+  builder_name: GRUBuilder2
   args:
     input_names: 
     - sac_flow
