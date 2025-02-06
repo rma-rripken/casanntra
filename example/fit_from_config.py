@@ -119,7 +119,7 @@ def read_config(configfile):
         except yaml.YAMLError as exc:
             print(exc)
 
-model_builders = { "GRUBuilder2m" : GRUBuilder2m
+model_builders = { "GRUBuilder2" : GRUBuilder2
                  }
 
 def model_builder_from_config(builder_config):
