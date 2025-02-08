@@ -107,9 +107,26 @@ class ModelBuilder(object):
         self.output_names = output_names  # Dict of {output_name: scale_factor}
         self.ndays = ndays
         self.load_model_fname = None  # Used for transfer learning
+        self.builder_args = {}        # Used for per-step configuration See process_config
 
         # ✅ Centralized custom object registration
         self.custom_objects = {"UnscaleLayer": UnscaleLayer}
+
+    def set_builder_args(self, builder_args):
+        """Allows builder_args to be updated dynamically between steps. No default implementation"""
+        self.builder_args = builder_args
+
+    def num_outputs(self):
+        """Returns the number of ANN output tensors produced if it is a list of tensors. 
+           This matters in transfer learning if the outputs include both an estimate of the 
+           main data and an estimate of the difference during transfer. 
+           Typical numbers will be 1 or 2, not "15".
+        """
+        return 1  # Default case, subclasses may override
+
+    def requires_secondary_data(self):
+        """Determines whether a second dataset is required for training."""
+        return False  # Default case (single-output models)
 
     def register_custom_object(self, name, obj):
         """Allows subclasses to register additional custom objects."""
@@ -145,6 +162,9 @@ class ModelBuilder(object):
 
     def feature_names(self):
         return self.input_names
+
+    def output_list(self):
+        return list(self.output_names)
 
     def feature_dim(self, feature):
         """Returns the dimension of feature, typically lags (individual or aggregated)"""
@@ -388,9 +408,6 @@ class ModelBuilder(object):
             return data
 
 
-
-
-
     def create_antecedent_inputs(self, df, ndays=-1, window_length=-1, nwindows=-1, reverse=None):
         """
         Expands a dataframe to include lagged data.
@@ -551,30 +568,17 @@ class GRUBuilder2(ModelBuilder):
 
         return ann
 
+    def get_loss_function(self):
+        """Returns the correct loss function based on transfer_type."""
+        return "mae"  # Default case (single-output models)
 
-    def fit_model(self,
-                ann,
-                fit_input,
-                fit_output,
-                test_input,
-                test_output,
-                init_train_rate,
-                init_epochs,
-                main_train_rate,
-                main_epochs):  
-        """Custom fit_model for MultiStageModelBuilder to support staged learning."""
 
-        # ✅ Select the correct loss function
-        if self.transfer_type == "mtl":
-            loss_function = weighted_mtl_loss
-        elif self.transfer_type == "contrastive":
-            loss_function = contrastive_loss
-        else:
-            loss_function = "mae"  # Default for DSM2 base
+    def fit_model(self, ann, fit_input, fit_output, test_input, test_output, init_train_rate, init_epochs, main_train_rate, main_epochs):
+        """Custom fit_model that supports staged learning and multi-output cases."""
 
-        print(f"Using loss function: {loss_function}")
+        # ✅ Get loss function dynamically
+        loss_function = self.get_loss_function()
 
-        # ✅ Initial training phase (faster learning rate)
         ann.compile(
             optimizer=tf.keras.optimizers.Adamax(learning_rate=init_train_rate, clipnorm=1.0), 
             loss=loss_function,

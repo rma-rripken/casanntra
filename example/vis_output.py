@@ -38,8 +38,10 @@ def load_data(model: str, station: str):
         f"{output_prefix}_xvalid_ref_out.csv", index_col=0, parse_dates=['datetime'], header=0
     )
     ann_data = pd.read_csv(
-        f"{output_prefix}_xvalid.csv", index_col=0, parse_dates=['datetime'], header=0
+        f"{output_prefix}_xvalid_0.csv", index_col=0, header=0
     )
+    ann_data['datetime'] = model_data.datetime
+    ann_data['case'] = model_data.case
     return model_data, ann_data
 
 def plot_results(axes, model_data, ann_data, station, model, linestyle='-'):
@@ -60,7 +62,7 @@ def plot_results(axes, model_data, ann_data, station, model, linestyle='-'):
         ax.plot(sub_mod.datetime, sub_mod[station], linestyle=linestyle, label=f"{model} Model",color=str(0.1))
         ax.plot(sub_ann.datetime, sub_ann[station], linestyle=linestyle, label=f"{model} ANN")
         ax.set_ylabel("Norm EC")
-        ax.set_title(f"Case = {icase}")
+        ax.set_title(f"Case = {icase}, {station}")
     
     axes[0].legend()
 

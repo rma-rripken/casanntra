@@ -54,13 +54,13 @@ def read_data(file_pattern,input_mask_regex,data_dir = data_repo):
     file_pattern = os.path.join(data_dir,file_pattern)
     fnames = glob.glob(file_pattern)
     fnames.sort()
-    fnames = filter_files(fnames,input_mask_regex)
+    if input_mask_regex is not None:
+        fnames = filter_files(fnames,input_mask_regex)
     if len(fnames) == 0:
         raise ValueError(f"No files found for pattern {file_pattern}")
     for fname in fnames:
         x = pd.read_csv(fname,parse_dates=['datetime'],sep=',')
-        if x.isnull().any(axis=None):  
-            raise ValueError(f"Null values from file {fname}")
+        spot_check(x,fname)
         if len(x) == 0: 
             continue
         dss.append(x) 
@@ -69,3 +69,7 @@ def read_data(file_pattern,input_mask_regex,data_dir = data_repo):
     
     return df
 
+
+def spot_check(df,fname):
+    if not("x2" in df.columns):
+        raise ValueError(f"x2 missing in data frame for file {fname}")

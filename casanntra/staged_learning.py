@@ -1,8 +1,4 @@
-# Reduce regularization
-# Larger model
-# MSE or weighted MAE
-
-from casanntra.read_data import read_data, compute_scenario_differences
+from casanntra.read_data import read_data
 from casanntra.model_builder import *
 from casanntra.multi_stage_model_builder import *
 from casanntra.xvalid_multi import xvalid_fit_multi, bulk_fit
@@ -18,7 +14,7 @@ import yaml
 from casanntra.model_builder import *
 from casanntra.xvalid_multi import xvalid_fit_multi, bulk_fit
 from casanntra.read_data import read_data
-
+from casanntra.single_or_list import single_or_list
 
 model_builders = { "GRUBuilder2" : GRUBuilder2, 
                   "MultiStageModelBuilder": MultiStageModelBuilder }
@@ -47,28 +43,45 @@ def fit_from_config(
     fpattern = f"{input_prefix}_*.csv"
     df = read_data(fpattern, input_mask_regex)
 
-    # Split the dataset into cross-validation folds
-    df_in, df_out = builder.xvalid_time_folds(df, target_fold_length, split_in_out=True)
+
+    # ✅ Handle secondary dataset if required
+    if builder.requires_secondary_data():
+        source_data_prefix = builder.builder_args.get("source_data_prefix", None)
+        if source_data_prefix is None:
+            raise ValueError(f"{builder.transfer_type} requires source_data_prefix in builder_args")
+        source_mask = builder.builder_args.get("source_input_mask_regex",None)
+
+        source_fpattern = f"{source_data_prefix}_*.csv"
+        df_source = read_data(source_fpattern,input_mask_regex=source_mask)
+        
+        # This takes df and df_source and puts them on a common index that also has 
+        # common (case,datetime) identity
+        df, df_source = builder.pool_and_align_cases([df,df_source])
+        
+        df_source_in, df_source_out = builder.xvalid_time_folds(df_source, target_fold_length, split_in_out=True)
+    
+        df_in, df_out = builder.xvalid_time_folds(df, target_fold_length, split_in_out=True)
+        df_in = df_source_in               # Thus far, ANNs have one set of input even when there are multiple outputs
+        df_out = [df_out,df_source_out]
+    else: 
+        df_in, df_out = builder.xvalid_time_folds(df, target_fold_length, split_in_out=True)
+    
+    # This works regardless of whether df_out is a list or not 
+    write_reference_outputs(output_prefix, df_out, builder, is_scaled=False)
 
     # Pool aggregation logic
     if pool_aggregation:
         df_in['fold'] = df_in['fold'] % pool_size
-        df_out['fold'] = df_out['fold'] % pool_size
+        if builder.requires_secondary_data():
+            df_out[0]['fold'] = df_out[0]['fold'] % pool_size
+            df_out[1]['fold'] = df_out[1]['fold'] % pool_size
+
+    # ✅ Scale outputs. Works for single df or list
+    df_out = scale_output(df_out,builder.output_names)
 
 
-    ref_out_csv = f"{output_prefix}_xvalid_ref_out_unscaled.csv"
-    print(ref_out_csv)
-    df_out.to_csv(ref_out_csv,float_format="%.3f",
-                  date_format="%Y-%m-%dT%H:%M",header=True,index=True)
-    
-    for col in builder.output_names:
-        scale_factor = builder.output_names[col]  # ✅ Get scale factor from YAML
-        df_out[col] /= scale_factor  # ✅ Apply scaling before training    
-    
-    ref_out_csv2 = f"{output_prefix}_xvalid_ref_out_scaled.csv"
-    print(ref_out_csv2)
-    df_out.to_csv(ref_out_csv,float_format="%.3f",
-                  date_format="%Y-%m-%dT%H:%M",header=True,index=True)
+    # ✅ Write scaled reference outputs, works for single dataframe or list 
+    write_reference_outputs(output_prefix, df_out, builder, is_scaled=True)
 
     # Perform cross-validation fitting (safe within multithreading)
     xvalid_fit_multi(df_in, df_out, builder,
@@ -105,12 +118,22 @@ def read_config(configfile):
 # ✅ Ensure any builder can be dynamically selected
 def model_builder_from_config(builder_config):
     """Factory function to create a model builder instance with required arguments."""
-    mbfactory = model_builders[builder_config["builder_name"]]
     
+    builder_args = builder_config.get("builder_args", {})
+    mbfactory = model_builders[builder_config["builder_name"]]
+    print(builder_config['args'])
     # ✅ Pass `args` directly, as in the old working version
-    builder = mbfactory(**builder_config["args"])
+    builder = mbfactory(**builder_config["args"], **builder_args) 
     
     return builder
+
+@single_or_list("df_out")
+def scale_output(df_out,output_scales):
+    output_list = list(output_scales)
+    for col in output_list:
+        scale_factor = output_scales[col]
+        df_out.loc[:,col] /= scale_factor
+    return df_out
 
 
 # ✅ Main function to process YAML steps
@@ -130,7 +153,14 @@ def process_config(configfile, proc_steps):
     for step in config['steps']:
         if step['name'] in proc_steps or proc_all:
 
-            print("\n\n###############  STEP", step['name'], "############\n")
+            print("\n\n\n\n###############  STEP", step['name'], "############\n")
+            # ✅ Extract `builder_args` from step
+            builder_args = step.get("builder_args", {})  
+            print(f"🔍 DEBUG: Builder Args for Step {step['name']} = {builder_args}")
+
+            # ✅ Set new builder_args dynamically instead of recreating the builder
+            builder.set_builder_args(builder_args)
+
             for key in step:
                 if step[key] == "None":
                     step[key] = None
@@ -139,8 +169,33 @@ def process_config(configfile, proc_steps):
             step_filtered = {k: v for k, v in step.items() if k != "builder_args"}
             
             # ✅ Just pass `builder_args` without interpreting it
+            
             fit_from_config(builder, **step_filtered)
+            #except Exception as e:
+            #    print(e)
+            #    print("Exception reported by step")                
+            #    raise
 
+def write_reference_outputs(output_prefix, df_out, builder, is_scaled=False):
+    """Writes reference output files for debugging and validation, handling both single and multi-output cases."""
+    
+    suffix = "scaled" if is_scaled else "unscaled"
+    
+    if isinstance(df_out, list):
+        primary_df = df_out[0]
+        secondary_df = df_out[1] if builder.requires_secondary_data() else None
+    else:
+        primary_df = df_out
+        secondary_df = None
+    
+    # ✅ Write primary reference output
+    ref_out_csv = f"{output_prefix}_xvalid_ref_out_{suffix}.csv"
+    primary_df.to_csv(ref_out_csv, float_format="%.3f", date_format="%Y-%m-%dT%H:%M", header=True, index=True)
+
+    # ✅ If secondary data exists, write its reference outputs
+    if secondary_df is not None:
+        ref_out_csv_secondary = f"{output_prefix}_xvalid_ref_out_secondary_{suffix}.csv"
+        secondary_df.to_csv(ref_out_csv_secondary, float_format="%.3f", date_format="%Y-%m-%dT%H:%M", header=True, index=True)
 
 
 def verify_data_availability(source_data_prefix, target_data_prefix):
