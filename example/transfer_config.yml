@@ -59,9 +59,9 @@ steps:
   pool_aggregation: True  # Use pool aggregation for large case counts
   target_fold_length: 180d  # Cross-validation time fold length
   init_train_rate: 0.008  # Initial learning rate for warm-up
-  init_epochs: 2  # Short warm-up phase
+  init_epochs: 10  # Short warm-up phase
   main_train_rate: 0.001  # Standard learning rate for main training phase
-  main_epochs: 3  # Number of epochs for main training phase
+  main_epochs: 100  # Number of epochs for main training phase
   builder_args:
     transfer_type: None  # No transfer learning in the base DSM2 training
 
