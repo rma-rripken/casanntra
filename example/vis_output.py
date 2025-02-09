@@ -6,7 +6,8 @@ import sys
 OUTPUT_PREFIXES = {
     "dsm2": "dsm2_base_gru2",
     "dsm2.schism": "dsm2.schism_base_gru2",
-    "base.suisun": "schism_base.suisun_gru2"
+    "base.suisun": "schism_base.suisun_gru2",
+    "base.suisun-secondary" : "schism_base.suisun_gru2"
 }
 
 # Mapping of station short names to full names
@@ -34,11 +35,17 @@ def load_data(model: str, station: str):
     if output_prefix is None:
         raise ValueError(f"Invalid model: {model}")
     
+    ref_out_fname = f"{output_prefix}_xvalid_ref_out_scaled.csv"
+    if output_prefix == "base.suisun-secondary":
+        ref_out_fname = f"{output_prefix}_xvalid_ref_out_secondary_scaled.csv"        
     model_data = pd.read_csv(
-        f"{output_prefix}_xvalid_ref_out.csv", index_col=0, parse_dates=['datetime'], header=0
+        ref_out_fname, index_col=0, parse_dates=['datetime'], header=0
     )
+    ann_out_fname = f"{output_prefix}_xvalid.csv"
+    if output_prefix == "base.suisun-secondary":
+        ann_out_fname = f"{output_prefix}_xvalid_1.csv"
     ann_data = pd.read_csv(
-        f"{output_prefix}_xvalid_0.csv", index_col=0, header=0
+        ann_out_fname, index_col=0, header=0
     )
     ann_data['datetime'] = model_data.datetime
     ann_data['case'] = model_data.case
@@ -50,10 +57,12 @@ def plot_results(axes, model_data, ann_data, station, model, linestyle='-'):
     
     for i, ax in enumerate(axes):
         icase = i + 1
+        #icase = i + 1 +i*10 + 11 
         if model in ["rma","dsm2.schism","base.suisun"]:
             grabcase = icase
         else:
             grabcase = 1000 + icase
+        grabcase = icase
         print("Model: ", model, "Case being plotted: ",grabcase)
         sub_mod = model_data[model_data.case == grabcase]
         sub_ann = ann_data[ann_data.case == grabcase]
@@ -78,6 +87,7 @@ def main():
     fig, axes = plt.subplots(n_cases, sharex=False, constrained_layout=True, figsize=(8, 9))
     
     for i, model in enumerate(models):
+
         model_data, ann_data = load_data(model, station)
         linestyle = '-' if i == 0 else '--'  # Solid for first, dashed for second
         plot_results(axes, model_data, ann_data, station, model, linestyle)

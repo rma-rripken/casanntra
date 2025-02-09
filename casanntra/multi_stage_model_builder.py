@@ -35,9 +35,12 @@ class ContrastiveLossLayer(Layer):
         ))
 
         contrast_penalty = tf.where(tf.reduce_any(mask_both), contrast_penalty, 0.0)
-
-        # ✅ Ensure that all components contribute
-        total_loss = source_error + 0.0001*target_error + 0.0001*contrast_penalty
+        #if tf.reduce_all(tf.equal(0.0, 0.0)):  # 🔥 This ensures contrastive loss is completely removed
+        #total_loss = source_error + 0.001 * target_error
+        #else:
+        total_loss = source_error + target_error + 0.5*contrast_penalty
+        # 🔥 Add Debugging Prints
+        #tf.print("Batch Loss:", total_loss, "Source:", source_error, "Target:", target_error, "Penalty:", contrast_penalty)
 
         self.add_loss(tf.reduce_mean(total_loss))
 
@@ -274,9 +277,16 @@ class MultiStageModelBuilder(GRUBuilder2):
                 inputs=[ann.input, y_true_target, y_true_source],
                 outputs=[y_pred_target, y_pred_source]
             )
-            loss_function={"contrastive_loss": lambda y_true, y_pred: tf.reduce_mean(y_pred) * 0},  # ✅ Use correct output name
-            metrics = {'contrastive_loss': [masked_mae, masked_mse]}, 
+            #loss_function={"contrastive_loss": lambda y_true, y_pred: tf.reduce_mean(y_pred) * 0},  # ✅ Use correct output name
+            #metrics = {'contrastive_loss': [masked_mae, masked_mse]}, 
             # 🚨 Explicitly call loss_layer to force it into the computational graph
+            loss_function = {  # 🔥 No need to explicitly define loss; ContrastiveLossLayer handles it
+                "contrastive_loss": lambda y_true, y_pred: tf.reduce_mean(y_pred) * 0,  # Dummy loss
+                "contrastive_loss_1": lambda y_true, y_pred: tf.reduce_mean(y_pred) * 0
+            }
+
+            metrics = {}  # 🔥 Remove MAE/MSE metrics, since they are inside ContrastiveLossLayer
+
          
         elif self.transfer_type == "difference":
             loss_function = hybrid_difference_loss  # ✅ Difference-based training
@@ -290,6 +300,11 @@ class MultiStageModelBuilder(GRUBuilder2):
             train_model = ann  # No special wrapper needed
             # ✅ Compile Model (Normal losses for main outputs, `add_loss()` handles contrast)
             loss_dict = {name: loss_function for name in output_names}
+
+        # todo: make this configurable
+        #for layer in ann.layers:
+        #    if layer.name in ["gru_1", "gru_2"]:
+        #        layer.trainable = False
 
         train_model.compile(
             optimizer=tf.keras.optimizers.Adamax(learning_rate=init_train_rate, clipnorm=0.5),
@@ -309,6 +324,8 @@ class MultiStageModelBuilder(GRUBuilder2):
        
         print("=== DEBUG: Checking Model Summary ===")
         train_model.summary()
+        num_outputs = self.num_outputs()
+
 
         print("=== DEBUG: Initial Training Phase ===")
         # ✅ Initial Training Phase
@@ -324,6 +341,13 @@ class MultiStageModelBuilder(GRUBuilder2):
         print("=== DEBUG: Main Training Phase ===")
         # ✅ Main Training Phase (Slower Learning Rate)
         if main_epochs and main_epochs > 0:
+            # Unfreeze feature layers before main training. 
+            # Todo: make this an options
+            #for layer in ann.layers:
+            #    if layer.name in ["gru_1", "gru_2"]:
+            #        layer.trainable = True
+            #print("✅ Feature layers (gru_1, gru_2) are UNFROZEN for main training.")
+
             train_model.compile(
                 optimizer=tf.keras.optimizers.Adamax(learning_rate=main_train_rate),
                 loss=loss_function,
