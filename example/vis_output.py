@@ -36,14 +36,18 @@ def load_data(model: str, station: str):
         raise ValueError(f"Invalid model: {model}")
     
     ref_out_fname = f"{output_prefix}_xvalid_ref_out_scaled.csv"
-    if output_prefix == "base.suisun-secondary":
-        ref_out_fname = f"{output_prefix}_xvalid_ref_out_secondary_scaled.csv"        
+    if model == "base.suisun-secondary":
+        ref_out_fname = f"{output_prefix}_xvalid_ref_out_secondary_scaled.csv"  
+    
+    print("ref", ref_out_fname)
     model_data = pd.read_csv(
         ref_out_fname, index_col=0, parse_dates=['datetime'], header=0
     )
     ann_out_fname = f"{output_prefix}_xvalid.csv"
-    if output_prefix == "base.suisun-secondary":
+    if model == "base.suisun-secondary":
         ann_out_fname = f"{output_prefix}_xvalid_1.csv"
+    elif model == "base.suisun":
+        ann_out_fname = f"{output_prefix}_xvalid_0.csv"    
     ann_data = pd.read_csv(
         ann_out_fname, index_col=0, header=0
     )
@@ -58,7 +62,7 @@ def plot_results(axes, model_data, ann_data, station, model, linestyle='-'):
     for i, ax in enumerate(axes):
         icase = i + 1
         #icase = i + 1 +i*10 + 11 
-        if model in ["rma","dsm2.schism","base.suisun"]:
+        if model in ["rma","dsm2.schism","base.suisun","base.suisun-secondary"]:
             grabcase = icase
         else:
             grabcase = 1000 + icase

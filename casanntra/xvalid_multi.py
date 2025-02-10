@@ -139,6 +139,9 @@ def xvalid_fit_multi(df_in, df_out, builder, init_train_rate, init_epochs, main_
             print(f"ifold={ifold}, fit_out type: {type(fit_out)}")
             print(f"ifold={ifold}, fit_out shape: {[f.shape for f in fit_out] if isinstance(fit_out, list) else fit_out.shape}")
 
+            print("Debug: fit_out shapes:", [o.shape for o in fit_out])
+            print("Debug: Any NaNs in fit_out[1]?", np.isnan(fit_out[1]).sum())
+
             future = executor.submit(single_model_fit, builder, df_in, fit_in, fit_out, test_in, test_out,
                                      out_prefix=out_prefix, init_epochs=init_epochs, init_train_rate=init_train_rate,
                                      main_epochs=main_epochs, main_train_rate=main_train_rate)

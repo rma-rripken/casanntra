@@ -62,17 +62,60 @@ def hybrid_difference_loss(y_true_target, y_pred_target, y_pred_source):
     # ✅ Weighted sum of errors
     return target_error + 0.5 * difference_penalty
 
-import tensorflow as tf
-
 def masked_mae(y_true, y_pred):
-    """Computes MAE while ignoring NaN values."""
+    """Computes MAE while ignoring NaN values and ensuring NaN-safe computation."""
     mask = tf.math.logical_not(tf.math.is_nan(y_true)) & tf.math.logical_not(tf.math.is_nan(y_pred))
-    return tf.reduce_mean(tf.abs(tf.boolean_mask(y_true - y_pred, mask)))
+    valid_values = tf.boolean_mask(y_true - y_pred, mask)
+
+    # ✅ If there are no valid values, return 0.0 instead of NaN
+    return tf.cond(
+        tf.size(valid_values) > 0,
+        lambda: tf.reduce_mean(tf.abs(valid_values)),
+        lambda: tf.constant(0.0, dtype=tf.float32)  # ✅ Return 0 loss if no valid values
+    )
 
 def masked_mse(y_true, y_pred):
-    """Computes MSE while ignoring NaN values."""
+    """Computes MAE while ignoring NaN values and ensuring NaN-safe computation."""
     mask = tf.math.logical_not(tf.math.is_nan(y_true)) & tf.math.logical_not(tf.math.is_nan(y_pred))
-    return tf.reduce_mean(tf.square(tf.boolean_mask(y_true - y_pred, mask)))
+    valid_values = tf.boolean_mask(y_true - y_pred, mask)
+
+    # ✅ If there are no valid values, return 0.0 instead of NaN
+    return tf.cond(
+        tf.size(valid_values) > 0,
+        lambda: tf.reduce_mean(tf.square(valid_values)),
+        lambda: tf.constant(1e-7, dtype=tf.float32)  # ✅ Avoid zero loss, ensure gradients exist
+    )
+
+def masked_mae_target(y_true, y_pred):
+    """Computes MAE for the target output while ignoring NaN values."""
+    y_true_target = y_true[0]  # Extract target component
+    y_pred_target = y_pred[0]  # Extract target prediction
+
+    mask = tf.math.logical_not(tf.math.is_nan(y_true_target)) & tf.math.logical_not(tf.math.is_nan(y_pred_target))
+    return tf.reduce_mean(tf.abs(tf.boolean_mask(y_true_target - y_pred_target, mask)))
+
+def masked_mae_source(y_true, y_pred):
+    """Computes MAE for the source output while ignoring NaN values."""
+    y_true_source = y_true[1]  # Extract source component
+    y_pred_source = y_pred[1]  # Extract source prediction
+
+    mask = tf.math.logical_not(tf.math.is_nan(y_true_source)) & tf.math.logical_not(tf.math.is_nan(y_pred_source))
+    return tf.reduce_mean(tf.abs(tf.boolean_mask(y_true_source - y_pred_source, mask)))
+
+def contrastive_penalty(y_true, y_pred):
+    """Computes contrastive loss separately for visualization."""
+    y_true_target, y_true_source = y_true  # Extract true values
+    y_pred_target, y_pred_source = y_pred  # Extract predictions
+
+    mask_source = tf.math.logical_not(tf.math.is_nan(y_true_source)) & tf.math.logical_not(tf.math.is_nan(y_pred_source))
+    mask_target = tf.math.logical_not(tf.math.is_nan(y_true_target)) & tf.math.logical_not(tf.math.is_nan(y_pred_target))
+
+    # Compute contrastive penalty only if both target and source have valid values
+    mask_both = mask_source & mask_target
+    contrast_penalty = tf.reduce_mean(tf.abs(
+        tf.boolean_mask(y_pred_target - y_pred_source, mask_both) - tf.boolean_mask(y_true_target - y_true_source, mask_both)
+    ))
+    return tf.where(tf.reduce_any(mask_both), contrast_penalty, 0.0)
 
 
 
@@ -106,82 +149,72 @@ class MultiStageModelBuilder(GRUBuilder2):
 
 
     def build_model(self, input_layers, input_data, add_unscaled_output=False):
-        """Builds or extends an existing model, ensuring UnscaleLayer and loss functions are registered."""
-        base_model = self.load_existing_model()  # ✅ Uses centralized model loading
+        """Builds the ANN model with explicit loss functions and metric tracking."""
+        
+        base_model = self.load_existing_model()
 
         if base_model:
             input_layer = base_model.input
             feature_extractor = base_model.get_layer('gru_2').output
+            self.old_dense_layer = base_model.get_layer("out_absolute")  # Ensure correct layer name
+            self.old_weights = self.old_dense_layer.get_weights()
         else:
-            print(f"Creating from scratch")
             prepro_layers = self.prepro_layers(input_layers, input_data)
             x = layers.Lambda(lambda x: tf.stack(x, axis=-1))(prepro_layers)
             x = layers.GRU(units=32, return_sequences=True, activation='sigmoid', name='gru_1')(x)
             feature_extractor = layers.GRU(units=16, return_sequences=False, activation='sigmoid', name='gru_2')(x)
             input_layer = input_layers
+            self.old_dense_layer = None
+            self.old_weights = None
 
-        # ✅ Handle Contrastive Learning Model
+        # ✅ Contrastive Learning Model
         if self.transfer_type == "contrastive":
-            contrastive_model = self._build_contrastive_model(input_layer, feature_extractor)
-            if add_unscaled_output:
-                unscaled_outputs = [self._create_unscaled_layer(out) for out in contrastive_model.outputs]
-                return Model(inputs=input_layer, outputs=contrastive_model.outputs + unscaled_outputs)
-            return contrastive_model
+            if self.transfer_type == "contrastive":
+                out_target_layer = layers.Dense(units=len(self.output_names), name="out_target", activation='elu')
+                out_source_layer = layers.Dense(units=len(self.output_names), name="out_source", activation='elu')
+                out_source = out_source_layer(feature_extractor)
+                out_target = out_target_layer(feature_extractor)
+                out_source_layer.set_weights(self.old_weights)
+                out_target_layer.set_weights(self.old_weights)
+                out_target_layer.trainable = True   # todo 
+            model = Model(inputs=input_layer, outputs=[out_target, out_source])       
+            
+            #model.add_loss(masked_mae_target)
+            #model.add_loss(masked_mae_source)
+            #model.add_loss(contrastive_penalty)
 
-        # ✅ Handle Multi-Task Learning Model (Difference Mode)
+            # ✅ Attach metrics (computed at runtime)
+            #model.add_metric(masked_mae_target, name="mae_target")
+            #model.add_metric(masked_mae_source, name="mae_source")
+            #model.add_metric(contrastive_penalty, name="contrastive_loss")
+
+            return model
+
+        # ✅ Multi-Task Learning (Difference)
         elif self.transfer_type == "difference":
-            print("🔍 DEBUG: Calling _build_mtl_model()")
-            mtl_model = self._build_mtl_model(input_layer, feature_extractor)
-            if add_unscaled_output:
-                unscaled_outputs = [self._create_unscaled_layer(out) for out in mtl_model.outputs]
-                return Model(inputs=input_layer, outputs=mtl_model.outputs + unscaled_outputs)
-            return mtl_model
+            out_absolute = layers.Dense(units=len(self.output_names), name="out_absolute", activation='elu')(feature_extractor)
+            out_diff = layers.Dense(units=len(self.output_names), name="out_diff", activation='linear')(feature_extractor)
+            
+            model = Model(inputs=input_layer, outputs=[out_absolute, out_diff])
 
-        # ✅ Default to Standard Model (Direct Transfer)
-        else: 
-            print("🔍 DEBUG: Calling _build_base_model()")
-            base_model = self._build_base_model(input_layer, feature_extractor)
-            if add_unscaled_output:
-                unscaled_output = self._create_unscaled_layer(base_model.output)
-                return Model(inputs=input_layer, outputs=[base_model.output, unscaled_output])
-            return base_model
+            model.add_loss(masked_mae(self.output_names[0], out_absolute))
+            model.add_loss(masked_mae(self.output_names[1], out_diff))
+            model.compile(optimizer='adam')
+            model.add_metric(masked_mse(self.output_names[0], out_absolute), name="mse_absolute")
+            model.add_metric(masked_mse(self.output_names[1], out_diff), name="mse_diff")
 
-    def _build_base_model(self, input_layer, feature_extractor):
-        """Creates a model for original training with only absolute salinity prediction."""
-        ec_absolute = layers.Dense(
-            units=len(self.output_names), name="out_absolute", activation='elu',
-            kernel_regularizer=regularizers.l1_l2(l1=0.0001, l2=0.0001)
-        )(feature_extractor)
-        return Model(inputs=input_layer, outputs=ec_absolute)
+            return model
 
-    def _build_mtl_model(self, input_layer, feature_extractor):
-        """Creates the MTL architecture with absolute and scenario difference outputs."""
-        ec_absolute = layers.Dense(
-            units=len(self.output_names), name="out_absolute", activation='elu',
-            kernel_regularizer=regularizers.l1_l2(l1=0.0001, l2=0.0001)
-        )(feature_extractor)
+        # ✅ Default Direct Mode
+        else:
+            out_absolute = layers.Dense(units=len(self.output_names), name="out_absolute", activation='elu')(feature_extractor)
 
-        ec_diff = layers.Dense(
-            units=len(self.output_names), name="out_diff", activation='linear',
-            kernel_regularizer=regularizers.l1_l2(l1=0.0001, l2=0.0001)
-        )(feature_extractor)
+            model = Model(inputs=input_layer, outputs=out_absolute)
 
-        return Model(inputs=input_layer, outputs=[ec_absolute, ec_diff])
+            model.add_loss(masked_mae(self.output_names[0], out_absolute))
+            model.add_metric(masked_mse(self.output_names[0], out_absolute), name="mse_absolute")
 
-    def _build_contrastive_model(self, input_layer, feature_extractor):
-        """Creates a contrastive learning model with scenario separation."""
-        ec_base = layers.Dense(
-            units=len(self.output_names), name="out_target", activation='elu',
-            kernel_regularizer=regularizers.l1_l2(l1=0.0001, l2=0.0001)
-        )(feature_extractor)
-
-        ec_suisun = layers.Dense(
-            units=len(self.output_names), name="out_source", activation='elu',
-            kernel_regularizer=regularizers.l1_l2(l1=0.0001, l2=0.0001)
-        )(feature_extractor)
-
-
-        return Model(inputs=input_layer, outputs=[ec_base, ec_suisun])
+            return model
 
     def get_loss_function(self):
         """Returns the correct loss function based on transfer_type."""
@@ -228,139 +261,87 @@ class MultiStageModelBuilder(GRUBuilder2):
         # ✅ Step 2: Create aligned versions of each DataFrame
         aligned_dfs = [all_case_datetime.merge(df, on=['case', 'datetime'], how='left') for df in dataframes]
 
+
         # ✅ Step 3: Identify input and output columns
         input_columns = list(self.input_names)
         output_columns = list(self.output_names)
 
-        # ✅ Step 4: Initialize merged_df with the first DataFrame to ensure all columns exist
+        # Step 4: Initialize merged_df with the first DataFrame to ensure all columns exist
         merged_df = aligned_dfs[0].copy()
 
-        # ✅ Step 5: Iteratively update only input columns from all other DataFrames
+        # Step 5: Iteratively update only input columns from all other DataFrames
         for df in aligned_dfs[1:]:
             for col in input_columns:
                 if col in df.columns:  # Ensure column exists before updating
                     merged_df[col] = merged_df[col].combine_first(df[col])
 
-        # ✅ Step 6: Create final aligned DataFrames, ensuring original output values are preserved
+        # Step 6: Create final aligned DataFrames, ensuring original output values are preserved
         final_dfs = []
         for original_df in aligned_dfs:
-            df_final = merged_df.copy()
-
-            # 🚨 Preserve only the original output values for this DataFrame
+            df_final = merged_df.copy()[["datetime","case","model","scene"] + input_columns + output_columns]
+            df_final['model'] = original_df.model
+            df_final['scene'] = original_df.scene
+            #  Preserve only the original output values for this DataFrame
             for col in output_columns:
+                
                 if col in original_df.columns:
                     df_final[col] = original_df[col]  # Restore the original output values
-
             final_dfs.append(df_final)
-
         return final_dfs
 
     def fit_model(self, ann, fit_input, fit_output, test_input, test_output, init_train_rate, init_epochs, main_train_rate, main_epochs):
-        """Custom fit_model that supports staged learning and multi-output cases with dynamic loss application."""
+        """Handles model training in two stages: initial training and fine-tuning."""
 
-        # ✅ Determine the correct loss function and output names
-        if self.transfer_type == "contrastive":
-            loss_function = None  # ✅ Standard MAE loss for main outputs is handled in custom
-            output_names = ["out_target", "out_source"]
-
-            # ✅ Create a training-specific wrapper model
-            y_true_target = tf.keras.Input(shape=(len(self.output_names),), name="y_true_target")
-            y_true_source = tf.keras.Input(shape=(len(self.output_names),), name="y_true_source")
-
-            y_pred_target, y_pred_source = ann.output[:2]  # Get predictions
-
-            # ✅ Attach contrastive loss layer
-            y_pred_target, y_pred_source = ContrastiveLossLayer(name="contrastive_loss")([y_true_target, y_true_source, y_pred_target, y_pred_source])
-
-            # ✅ Define training model (only used for training)
-            train_model = tf.keras.Model(
-                inputs=[ann.input, y_true_target, y_true_source],
-                outputs=[y_pred_target, y_pred_source]
-            )
-            #loss_function={"contrastive_loss": lambda y_true, y_pred: tf.reduce_mean(y_pred) * 0},  # ✅ Use correct output name
-            #metrics = {'contrastive_loss': [masked_mae, masked_mse]}, 
-            # 🚨 Explicitly call loss_layer to force it into the computational graph
-            loss_function = {  # 🔥 No need to explicitly define loss; ContrastiveLossLayer handles it
-                "contrastive_loss": lambda y_true, y_pred: tf.reduce_mean(y_pred) * 0,  # Dummy loss
-                "contrastive_loss_1": lambda y_true, y_pred: tf.reduce_mean(y_pred) * 0
-            }
-
-            metrics = {}  # 🔥 Remove MAE/MSE metrics, since they are inside ContrastiveLossLayer
-
-         
-        elif self.transfer_type == "difference":
-            loss_function = hybrid_difference_loss  # ✅ Difference-based training
-            output_names = ["out_absolute", "out_diff"]
-            train_model = ann  # No special wrapper needed
-        else:
-            print("direct or base training")
-            loss_function = "mae"
-            metrics = ["mae","mse"]
-            output_names = ["output"] #[list(self.output_names.keys())[0]]  # Single-output model
-            train_model = ann  # No special wrapper needed
-            # ✅ Compile Model (Normal losses for main outputs, `add_loss()` handles contrast)
-            loss_dict = {name: loss_function for name in output_names}
-
+        train_model = ann  # Model with loss functions already attached
         # todo: make this configurable
-        #for layer in ann.layers:
-        #    if layer.name in ["gru_1", "gru_2"]:
-        #        layer.trainable = False
+        for layer in ann.layers:
+            if layer.name in ["gru_1", "gru_2"]:
+                layer.trainable = False
 
         train_model.compile(
             optimizer=tf.keras.optimizers.Adamax(learning_rate=init_train_rate, clipnorm=0.5),
-            loss=loss_function,
-            metrics=metrics, 
-            run_eagerly=False
+            run_eagerly=False,  # No need for eager execution
+            loss =  {"out_target" : masked_mae, "out_source": masked_mae}, #{"out_source": masked_mae},              # todo 
+            metrics = {"out_target" : [masked_mae,masked_mse], "out_source": [masked_mae,masked_mse]}
         )
 
-
-        # ✅ Format Inputs for Training
-        if self.requires_secondary_data():
-            fit_x = [fit_input, fit_output[0], fit_output[1]]
-            test_x = [test_input, test_output[0], test_output[1]]
-        else:
-            fit_x, test_x = fit_input, test_input
-        
-       
-        print("=== DEBUG: Checking Model Summary ===")
-        train_model.summary()
-        num_outputs = self.num_outputs()
-
-
+        # ✅ Initial Training Phase (larger learning rate)
         print("=== DEBUG: Initial Training Phase ===")
-        # ✅ Initial Training Phase
         history = train_model.fit(
-            fit_x, fit_output,
+            fit_input, fit_output,  # ⬅️ Only the actual feature input is used
             epochs=init_epochs,
             batch_size=64,
-            validation_data=(test_x, test_output),
+            validation_data=(test_input, test_output),
             verbose=2,
             shuffle=True
         )
 
-        print("=== DEBUG: Main Training Phase ===")
-        # ✅ Main Training Phase (Slower Learning Rate)
+        # ✅ Main Training Phase (fine-tuning with a lower learning rate)
         if main_epochs and main_epochs > 0:
+
             # Unfreeze feature layers before main training. 
             # Todo: make this an options
-            #for layer in ann.layers:
-            #    if layer.name in ["gru_1", "gru_2"]:
-            #        layer.trainable = True
-            #print("✅ Feature layers (gru_1, gru_2) are UNFROZEN for main training.")
-
+            for layer in ann.layers:
+                if layer.name in ["gru_1", "gru_2"]:
+                    layer.trainable = True
+            print("✅ Feature layers (gru_1, gru_2) are UNFROZEN for main training.")            
+            print("=== DEBUG: Main Training Phase ===")
+            train_model.compile(optimizer=tf.keras.optimizers.Adamax(learning_rate=main_train_rate,
+                                                                     clipnorm=0.5))
             train_model.compile(
-                optimizer=tf.keras.optimizers.Adamax(learning_rate=main_train_rate),
-                loss=loss_function,
-                metrics=metrics,
-                run_eagerly=False
+                optimizer=tf.keras.optimizers.Adamax(learning_rate=main_train_rate, clipnorm=0.5),
+                run_eagerly=False,  # No need for eager execution
+                loss =  {"out_target" : masked_mae, "out_source": masked_mae}, #{"out_source": masked_mae},              # todo 
+                metrics = {"out_target" : [masked_mae,masked_mse], "out_source": [masked_mae,masked_mse]}
             )
             history = train_model.fit(
-                fit_x, fit_output,
+                fit_input, fit_output,  # ⬅️ Again, only the real input data
                 epochs=main_epochs,
                 batch_size=64,
-                validation_data=(test_x, test_output),
+                validation_data=(test_input, test_output),
                 verbose=2,
                 shuffle=True
             )
+
         print("=== DEBUG: Completed Main Training Phase ===")
-        return history, ann  # ✅ Base model is returned for inference
+        return history, ann

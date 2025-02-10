@@ -29,9 +29,9 @@ def test_pool_and_align_cases():
     df2 = pd.DataFrame({
         'case': [1, 1, 3, 3],  # Case 2 is missing in df2
         'datetime': pd.to_datetime(['2023-01-01', '2023-01-02', '2023-01-01', '2023-01-02']),
-        'input1': [15, 25, 35, 45],
+        'input1': [11, 20, 35, 45],
         'input2': [5, 6, 7, 8],
-        'output1': [None, None, None, None],
+        'output1': [11., 12., 13., 14.],
         'output2': [150, 250, 350, 450]
     })
     

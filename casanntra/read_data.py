@@ -59,6 +59,7 @@ def read_data(file_pattern,input_mask_regex,data_dir = data_repo):
     if len(fnames) == 0:
         raise ValueError(f"No files found for pattern {file_pattern}")
     for fname in fnames:
+        print(fname)
         x = pd.read_csv(fname,parse_dates=['datetime'],sep=',')
         spot_check(x,fname)
         if len(x) == 0: 

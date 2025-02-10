@@ -53,10 +53,15 @@ def fit_from_config(
 
         source_fpattern = f"{source_data_prefix}_*.csv"
         df_source = read_data(source_fpattern,input_mask_regex=source_mask)
-        
+        #df.to_csv("df_echo.csv")
+        #df_source.to_csv("dfsrc_echo.csv")
         # This takes df and df_source and puts them on a common index that also has 
         # common (case,datetime) identity
         df, df_source = builder.pool_and_align_cases([df,df_source])
+        # Debugging stuff
+        #bigdf = pd.concat([df,df_source], axis = 1)
+        #df.to_csv("bigdf.csv",header=True)
+        #df_source.to_csv("bigother.csv",header=True)
         
         df_source_in, df_source_out = builder.xvalid_time_folds(df_source, target_fold_length, split_in_out=True)
     
