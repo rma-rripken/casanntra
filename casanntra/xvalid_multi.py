@@ -10,14 +10,17 @@ def single_model_fit(builder, df_in, fit_in, fit_out, test_in, test_out,
                      out_prefix, init_train_rate,
                      init_epochs, main_train_rate, main_epochs):
     input_layers = builder.input_layers()
+    # Todo: train_model is the augmented model that includes a pass through of output
+    #       ann is the main model for inference
     ann = builder.build_model(input_layers, df_in)
-    print("Fitting model in single_model_fit")
-    print(f"Expected outputs: {builder.num_outputs()}")
+    #todo: this was train_model 
     history, ann = builder.fit_model(ann, fit_in, fit_out, test_in, test_out, 
-                                    init_train_rate=init_train_rate,
-                                    init_epochs=init_epochs, 
-                                    main_train_rate=main_train_rate, 
-                                    main_epochs=main_epochs)
+                            init_train_rate=init_train_rate,
+                            init_epochs=init_epochs, 
+                            main_train_rate=main_train_rate, 
+                            main_epochs=main_epochs)
+    
+    # Todo 
     print("Predicting data in single_model_fit") 
     test_pred = ann.predict(test_in)
     print(f"type of test pred {type(test_pred)}")
@@ -59,7 +62,7 @@ def bulk_fit(builder, df_in, df_out, out_prefix, fit_in, fit_out, test_in, test_
 
 
     input_layers = builder.input_layers()
-    ann = builder.build_model(input_layers, df_in)
+    ann  = builder.build_model(input_layers, df_in)
    
     history, ann = builder.fit_model(ann, fit_in, fit_out, test_in, test_out,
                                      init_train_rate=init_train_rate, init_epochs=init_epochs,
@@ -132,7 +135,6 @@ def xvalid_fit_multi(df_in, df_out, builder, init_train_rate, init_epochs, main_
             fit_in = builder.df_by_feature_and_time(fit_in).drop(["datetime","case","fold"], level="var", axis=1)
             fit_in =  {name: fit_in.loc[:,idx[name,:]].droplevel("var",axis=1) for name in builder.input_names}
 
-            testdt = test_in.datetime
             test_in = builder.df_by_feature_and_time(test_in).drop(["datetime","case","fold"], level="var", axis=1)
             test_in = {name: test_in.loc[:,idx[name,:]].droplevel("var",axis=1) for name in builder.input_names}
 

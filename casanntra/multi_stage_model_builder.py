@@ -4,6 +4,7 @@ import tensorflow as tf
 import pandas as pd
 from casanntra.model_builder import GRUBuilder2
 from tensorflow.keras.layers import Layer
+import numpy  as np
 
 
 import tensorflow as tf
@@ -11,41 +12,38 @@ from tensorflow.keras.layers import Layer
 
 import tensorflow as tf
 from tensorflow.keras.layers import Layer
+
 
 class ContrastiveLossLayer(Layer):
-    def call(self, inputs, training=None):
-        y_true_target, y_true_source, y_pred_target, y_pred_source = inputs
+    """A Keras layer to compute contrastive loss while avoiding `tf.cond` issues with symbolic tensors."""
+    
+    def __init__(self, λ=0.0001, **kwargs):
+        super(ContrastiveLossLayer, self).__init__(**kwargs)
+        self.λ = λ  # Weighting factor for contrastive loss
 
-        # ✅ Compute masks to ignore NaN values
+    def call(self, inputs):
+        y_true_target, y_true_source, y_pred_target, y_pred_source = inputs
+        
+        ypred_archive = tf.identity(y_pred_target)
+        ysrc_archive = tf.identity(y_pred_source)
+        # ✅ Ensure consistent dtype (float32)
+        y_true_target = tf.cast(y_true_target, tf.float32)
+        y_true_source = tf.cast(y_true_source, tf.float32)
+        y_pred_target = tf.cast(y_pred_target, tf.float32)
+        y_pred_source = tf.cast(y_pred_source, tf.float32)
+
         mask_source = tf.math.logical_not(tf.math.is_nan(y_true_source)) & tf.math.logical_not(tf.math.is_nan(y_pred_source))
         mask_target = tf.math.logical_not(tf.math.is_nan(y_true_target)) & tf.math.logical_not(tf.math.is_nan(y_pred_target))
-
-        # ✅ Compute MAE only for available (non-NaN) values
-        source_error = tf.reduce_mean(tf.abs(tf.boolean_mask(y_true_source - y_pred_source, mask_source)))
-        target_error = tf.reduce_mean(tf.abs(tf.boolean_mask(y_true_target - y_pred_target, mask_target)))
-
-        # ✅ Provide a fallback zero-loss if no valid values exist
-        source_error = tf.where(tf.math.is_finite(source_error), source_error, 0.0)
-        target_error = tf.where(tf.math.is_finite(target_error), target_error, 0.0)
-
-        # ✅ Compute contrastive penalty only if both source and target have valid values
         mask_both = mask_source & mask_target
-        contrast_penalty = tf.reduce_mean(tf.abs(
-            tf.boolean_mask(y_pred_target - y_pred_source, mask_both) - tf.boolean_mask(y_true_target - y_true_source, mask_both)
-        ))
 
-        contrast_penalty = tf.where(tf.reduce_any(mask_both), contrast_penalty, 0.0)
-        #if tf.reduce_all(tf.equal(0.0, 0.0)):  # 🔥 This ensures contrastive loss is completely removed
-        #total_loss = source_error + 0.001 * target_error
-        #else:
-        total_loss = source_error + target_error + 0.5*contrast_penalty
-        # 🔥 Add Debugging Prints
-        #tf.print("Batch Loss:", total_loss, "Source:", source_error, "Target:", target_error, "Penalty:", contrast_penalty)
+        contrast_loss = tf.reduce_mean(tf.maximum(
+            tf.abs(tf.boolean_mask(y_pred_target - y_pred_source, mask_both)) -
+            tf.abs(tf.boolean_mask(y_true_target - y_true_source, mask_both)) + 0.01, 0))
 
-        self.add_loss(tf.reduce_mean(total_loss))
-
-        return y_pred_target, y_pred_source
-
+        contrast_loss = tf.where(tf.reduce_any(mask_both), contrast_loss, 0.0)  # Prevents NaNs
+        self.add_loss(self.λ * contrast_loss)  # ✅ Return properly weighted loss
+        #return y_pred_target, y_pred_source
+        return ypred_archive, ysrc_archive
 
 def hybrid_difference_loss(y_true_target, y_pred_target, y_pred_source):
     """Computes hybrid difference loss where source model is fixed, and target model must match both its own truth and the difference."""
@@ -106,6 +104,12 @@ def contrastive_penalty(y_true, y_pred):
     """Computes contrastive loss separately for visualization."""
     y_true_target, y_true_source = y_true  # Extract true values
     y_pred_target, y_pred_source = y_pred  # Extract predictions
+
+    y_true_target = tf.cast(y_true_target, tf.float32)
+    y_true_source = tf.cast(y_true_source, tf.float32)
+    y_pred_target = tf.cast(y_pred_target, tf.float32)
+    y_pred_source = tf.cast(y_pred_source, tf.float32)
+
 
     mask_source = tf.math.logical_not(tf.math.is_nan(y_true_source)) & tf.math.logical_not(tf.math.is_nan(y_pred_source))
     mask_target = tf.math.logical_not(tf.math.is_nan(y_true_target)) & tf.math.logical_not(tf.math.is_nan(y_pred_target))
@@ -169,26 +173,30 @@ class MultiStageModelBuilder(GRUBuilder2):
 
         # ✅ Contrastive Learning Model
         if self.transfer_type == "contrastive":
-            if self.transfer_type == "contrastive":
-                out_target_layer = layers.Dense(units=len(self.output_names), name="out_target", activation='elu')
-                out_source_layer = layers.Dense(units=len(self.output_names), name="out_source", activation='elu')
-                out_source = out_source_layer(feature_extractor)
-                out_target = out_target_layer(feature_extractor)
-                out_source_layer.set_weights(self.old_weights)
-                out_target_layer.set_weights(self.old_weights)
-                out_target_layer.trainable = True   # todo 
-            model = Model(inputs=input_layer, outputs=[out_target, out_source])       
-            
-            #model.add_loss(masked_mae_target)
-            #model.add_loss(masked_mae_source)
-            #model.add_loss(contrastive_penalty)
 
-            # ✅ Attach metrics (computed at runtime)
-            #model.add_metric(masked_mae_target, name="mae_target")
-            #model.add_metric(masked_mae_source, name="mae_source")
-            #model.add_metric(contrastive_penalty, name="contrastive_loss")
 
-            return model
+            # ✅ Define explicit `y_true` placeholders for training only
+            y_true_target = layers.Input(shape=(len(self.output_names),), name="y_true_target")
+            y_true_source = layers.Input(shape=(len(self.output_names),), name="y_true_source")           
+
+            # ✅ Prevent Keras from computing gradients for these inputs
+            y_true_target = tf.stop_gradient(y_true_target)
+            y_true_source = tf.stop_gradient(y_true_source)
+
+
+
+            out_target_layer = layers.Dense(units=len(self.output_names), name="out_target", activation='elu')
+            out_source_layer = layers.Dense(units=len(self.output_names), name="out_source", activation='elu')
+            out_source = out_source_layer(feature_extractor)
+            out_target = out_target_layer(feature_extractor)
+            out_source_layer.set_weights(self.old_weights)
+            out_target_layer.set_weights(self.old_weights)
+            out_target_layer.trainable = True   # todo investigate further
+
+            out_contrast = layers.Subtract(name="out_contrast")([out_target, out_source])
+            ann = Model(inputs=input_layer, outputs=[out_target, out_source, out_contrast])    
+            return ann
+
 
         # ✅ Multi-Task Learning (Difference)
         elif self.transfer_type == "difference":
@@ -199,7 +207,7 @@ class MultiStageModelBuilder(GRUBuilder2):
 
             model.add_loss(masked_mae(self.output_names[0], out_absolute))
             model.add_loss(masked_mae(self.output_names[1], out_diff))
-            model.compile(optimizer='adam')
+            model.compile(optimizer='Adamax')
             model.add_metric(masked_mse(self.output_names[0], out_absolute), name="mse_absolute")
             model.add_metric(masked_mse(self.output_names[1], out_diff), name="mse_diff")
 
@@ -216,15 +224,6 @@ class MultiStageModelBuilder(GRUBuilder2):
 
             return model
 
-    def get_loss_function(self):
-        """Returns the correct loss function based on transfer_type."""
-        if self.transfer_type == "mtl":
-            return weighted_mtl_loss
-        if self.transfer_type == "contrastive":
-            return hybrid_contrastive_loss_keras  # ✅ Both models train together
-        if self.transfer_type == "difference":
-            return hybrid_difference_loss   # ✅ Only the target model trains
-        return "mae"
 
     def requires_secondary_data(self):
         """Returns True if transfer learning requires a second dataset."""
@@ -291,27 +290,59 @@ class MultiStageModelBuilder(GRUBuilder2):
 
     def fit_model(self, ann, fit_input, fit_output, test_input, test_output, init_train_rate, init_epochs, main_train_rate, main_epochs):
         """Handles model training in two stages: initial training and fine-tuning."""
+        
+        
+        contrastive_target = fit_output[0] - fit_output[1]  # Precomputed contrast
+        contrast_weight = 0.50
 
-        train_model = ann  # Model with loss functions already attached
+        # ✅ Mask NaNs properly
+        contrastive_target[np.isnan(fit_output[0]) | np.isnan(fit_output[1])] = np.nan
+
+        train_y = {
+            "out_target": fit_output[0],
+            "out_source": fit_output[1],
+            "out_contrast": contrastive_target  # ✅ Treated just like a regular target
+        }
+
+        contrastive_test = test_output[0] - test_output[1]  # Precomputed contrast
+        # ✅ Validation labels
+        test_y = {
+            "out_target": test_output[0],
+            "out_source": test_output[1],
+            "out_contrast": test_output[0] - test_output[1]
+        }
+        test_y["out_contrast"][np.isnan(test_output[0]) | np.isnan(test_output[1])] = np.nan  # ✅ Mask NaNs
+
+
+
         # todo: make this configurable
         for layer in ann.layers:
             if layer.name in ["gru_1", "gru_2"]:
                 layer.trainable = False
 
-        train_model.compile(
+        # todo: this is unique to contrastive
+        ann.compile(
             optimizer=tf.keras.optimizers.Adamax(learning_rate=init_train_rate, clipnorm=0.5),
             run_eagerly=False,  # No need for eager execution
-            loss =  {"out_target" : masked_mae, "out_source": masked_mae}, #{"out_source": masked_mae},              # todo 
-            metrics = {"out_target" : [masked_mae,masked_mse], "out_source": [masked_mae,masked_mse]}
-        )
+            loss =  {"out_target" : masked_mae, 
+                     "out_source":  masked_mae,
+                     "out_contrast": masked_mae},
+            loss_weights={  # ✅ Assign loss weights to emulate λ effect
+                "out_target": 1.0,
+                "out_source": 1.0,
+                "out_contrast": contrast_weight  # ✅ Contrastive loss weight
+            },                     
+            metrics = {"out_target" :  [masked_mae,masked_mse], 
+                       "out_source":   [masked_mae,masked_mse],
+                       "out_contrast": [masked_mae, masked_mse]})
 
         # ✅ Initial Training Phase (larger learning rate)
         print("=== DEBUG: Initial Training Phase ===")
-        history = train_model.fit(
-            fit_input, fit_output,  # ⬅️ Only the actual feature input is used
+        history = ann.fit(
+            fit_input, train_y,  # ⬅️ Only the actual feature input is used
             epochs=init_epochs,
             batch_size=64,
-            validation_data=(test_input, test_output),
+            validation_data=(test_input, test_y),   # todo: train_x and test_x are for input-augmented
             verbose=2,
             shuffle=True
         )
@@ -324,21 +355,29 @@ class MultiStageModelBuilder(GRUBuilder2):
             for layer in ann.layers:
                 if layer.name in ["gru_1", "gru_2"]:
                     layer.trainable = True
-            print("✅ Feature layers (gru_1, gru_2) are UNFROZEN for main training.")            
+            print(" Feature layers (gru_1, gru_2) are UNFROZEN for main training.")            
             print("=== DEBUG: Main Training Phase ===")
-            train_model.compile(optimizer=tf.keras.optimizers.Adamax(learning_rate=main_train_rate,
-                                                                     clipnorm=0.5))
-            train_model.compile(
-                optimizer=tf.keras.optimizers.Adamax(learning_rate=main_train_rate, clipnorm=0.5),
+
+            ann.compile(
+                optimizer=tf.keras.optimizers.Adamax(learning_rate=init_train_rate, clipnorm=0.5),
                 run_eagerly=False,  # No need for eager execution
-                loss =  {"out_target" : masked_mae, "out_source": masked_mae}, #{"out_source": masked_mae},              # todo 
-                metrics = {"out_target" : [masked_mae,masked_mse], "out_source": [masked_mae,masked_mse]}
-            )
-            history = train_model.fit(
-                fit_input, fit_output,  # ⬅️ Again, only the real input data
+                loss =  {"out_target" : masked_mae, 
+                        "out_source":  masked_mae,
+                        "out_contrast": masked_mae},
+                loss_weights={  # ✅ Assign loss weights to emulate λ effect
+                    "out_target": 1.0,
+                    "out_source": 1.0,
+                    "out_contrast": contrast_weight  # ✅ Contrastive loss weight
+                },                        
+                metrics = {"out_target" :  [masked_mae,masked_mse], 
+                        "out_source":   [masked_mae,masked_mse],
+                        "out_contrast": [masked_mae, masked_mse]})
+
+            history = ann.fit(
+                fit_input, train_y,  # ⬅️ Again, only the real input data
                 epochs=main_epochs,
                 batch_size=64,
-                validation_data=(test_input, test_output),
+                validation_data=(test_input, test_y),
                 verbose=2,
                 shuffle=True
             )
