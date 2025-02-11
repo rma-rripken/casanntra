@@ -3,62 +3,11 @@ from tensorflow.keras import layers, regularizers, Model
 import tensorflow as tf
 import pandas as pd
 from casanntra.model_builder import GRUBuilder2
-from tensorflow.keras.layers import Layer
 import numpy  as np
-
-
-import tensorflow as tf
-from tensorflow.keras.layers import Layer
-
 import tensorflow as tf
 from tensorflow.keras.layers import Layer
 
 
-class ContrastiveLossLayer(Layer):
-    """A Keras layer to compute contrastive loss while avoiding `tf.cond` issues with symbolic tensors."""
-    
-    def __init__(self, λ=0.0001, **kwargs):
-        super(ContrastiveLossLayer, self).__init__(**kwargs)
-        self.λ = λ  # Weighting factor for contrastive loss
-
-    def call(self, inputs):
-        y_true_target, y_true_source, y_pred_target, y_pred_source = inputs
-        
-        ypred_archive = tf.identity(y_pred_target)
-        ysrc_archive = tf.identity(y_pred_source)
-        # ✅ Ensure consistent dtype (float32)
-        y_true_target = tf.cast(y_true_target, tf.float32)
-        y_true_source = tf.cast(y_true_source, tf.float32)
-        y_pred_target = tf.cast(y_pred_target, tf.float32)
-        y_pred_source = tf.cast(y_pred_source, tf.float32)
-
-        mask_source = tf.math.logical_not(tf.math.is_nan(y_true_source)) & tf.math.logical_not(tf.math.is_nan(y_pred_source))
-        mask_target = tf.math.logical_not(tf.math.is_nan(y_true_target)) & tf.math.logical_not(tf.math.is_nan(y_pred_target))
-        mask_both = mask_source & mask_target
-
-        contrast_loss = tf.reduce_mean(tf.maximum(
-            tf.abs(tf.boolean_mask(y_pred_target - y_pred_source, mask_both)) -
-            tf.abs(tf.boolean_mask(y_true_target - y_true_source, mask_both)) + 0.01, 0))
-
-        contrast_loss = tf.where(tf.reduce_any(mask_both), contrast_loss, 0.0)  # Prevents NaNs
-        self.add_loss(self.λ * contrast_loss)  # ✅ Return properly weighted loss
-        #return y_pred_target, y_pred_source
-        return ypred_archive, ysrc_archive
-
-def hybrid_difference_loss(y_true_target, y_pred_target, y_pred_source):
-    """Computes hybrid difference loss where source model is fixed, and target model must match both its own truth and the difference."""
-    
-    # ✅ Ensure NaN robustness
-    mask_target = tf.math.logical_not(tf.math.is_nan(y_true_target)) & tf.math.logical_not(tf.math.is_nan(y_pred_target))
-    
-    # ✅ Target accuracy penalty
-    target_error = tf.reduce_mean(tf.abs(tf.boolean_mask(y_true_target, mask_target) - tf.boolean_mask(y_pred_target, mask_target)))
-    
-    # ✅ Difference consistency penalty (forces ANN to predict correct differences)
-    difference_penalty = tf.reduce_mean(tf.abs((y_pred_target - y_pred_source) - (y_true_target - y_pred_source)))
-
-    # ✅ Weighted sum of errors
-    return target_error + 0.5 * difference_penalty
 
 def masked_mae(y_true, y_pred):
     """Computes MAE while ignoring NaN values and ensuring NaN-safe computation."""
@@ -84,43 +33,6 @@ def masked_mse(y_true, y_pred):
         lambda: tf.constant(1e-7, dtype=tf.float32)  # ✅ Avoid zero loss, ensure gradients exist
     )
 
-def masked_mae_target(y_true, y_pred):
-    """Computes MAE for the target output while ignoring NaN values."""
-    y_true_target = y_true[0]  # Extract target component
-    y_pred_target = y_pred[0]  # Extract target prediction
-
-    mask = tf.math.logical_not(tf.math.is_nan(y_true_target)) & tf.math.logical_not(tf.math.is_nan(y_pred_target))
-    return tf.reduce_mean(tf.abs(tf.boolean_mask(y_true_target - y_pred_target, mask)))
-
-def masked_mae_source(y_true, y_pred):
-    """Computes MAE for the source output while ignoring NaN values."""
-    y_true_source = y_true[1]  # Extract source component
-    y_pred_source = y_pred[1]  # Extract source prediction
-
-    mask = tf.math.logical_not(tf.math.is_nan(y_true_source)) & tf.math.logical_not(tf.math.is_nan(y_pred_source))
-    return tf.reduce_mean(tf.abs(tf.boolean_mask(y_true_source - y_pred_source, mask)))
-
-def contrastive_penalty(y_true, y_pred):
-    """Computes contrastive loss separately for visualization."""
-    y_true_target, y_true_source = y_true  # Extract true values
-    y_pred_target, y_pred_source = y_pred  # Extract predictions
-
-    y_true_target = tf.cast(y_true_target, tf.float32)
-    y_true_source = tf.cast(y_true_source, tf.float32)
-    y_pred_target = tf.cast(y_pred_target, tf.float32)
-    y_pred_source = tf.cast(y_pred_source, tf.float32)
-
-
-    mask_source = tf.math.logical_not(tf.math.is_nan(y_true_source)) & tf.math.logical_not(tf.math.is_nan(y_pred_source))
-    mask_target = tf.math.logical_not(tf.math.is_nan(y_true_target)) & tf.math.logical_not(tf.math.is_nan(y_pred_target))
-
-    # Compute contrastive penalty only if both target and source have valid values
-    mask_both = mask_source & mask_target
-    contrast_penalty = tf.reduce_mean(tf.abs(
-        tf.boolean_mask(y_pred_target - y_pred_source, mask_both) - tf.boolean_mask(y_true_target - y_true_source, mask_both)
-    ))
-    return tf.where(tf.reduce_any(mask_both), contrast_penalty, 0.0)
-
 
 
 # multi_stage_model_builder.py
@@ -131,8 +43,8 @@ class MultiStageModelBuilder(GRUBuilder2):
         super().__init__(input_names, output_names, ndays)
 
         # ✅ Register additional loss functions required for staged training
-        self.register_custom_object("ContrastiveLossLayer", ContrastiveLossLayer)
-        self.register_custom_object("hydbrid_difference_loss", hybrid_difference_loss)
+        self.register_custom_object("masked_mae", masked_mae)
+        self.register_custom_object("masked_mse", masked_mse)
 
     def set_builder_args(self, builder_args):
         """Allows builder_args to be updated dynamically between steps."""
@@ -198,27 +110,10 @@ class MultiStageModelBuilder(GRUBuilder2):
             return ann
 
 
-        # ✅ Multi-Task Learning (Difference)
-        elif self.transfer_type == "difference":
-            out_absolute = layers.Dense(units=len(self.output_names), name="out_absolute", activation='elu')(feature_extractor)
-            out_diff = layers.Dense(units=len(self.output_names), name="out_diff", activation='linear')(feature_extractor)
-            
-            model = Model(inputs=input_layer, outputs=[out_absolute, out_diff])
-
-            model.add_loss(masked_mae(self.output_names[0], out_absolute))
-            model.add_loss(masked_mae(self.output_names[1], out_diff))
-            model.compile(optimizer='Adamax')
-            model.add_metric(masked_mse(self.output_names[0], out_absolute), name="mse_absolute")
-            model.add_metric(masked_mse(self.output_names[1], out_diff), name="mse_diff")
-
-            return model
-
         # ✅ Default Direct Mode
         else:
             out_absolute = layers.Dense(units=len(self.output_names), name="out_absolute", activation='elu')(feature_extractor)
-
             model = Model(inputs=input_layer, outputs=out_absolute)
-
             model.add_loss(masked_mae(self.output_names[0], out_absolute))
             model.add_metric(masked_mse(self.output_names[0], out_absolute), name="mse_absolute")
 
@@ -229,8 +124,6 @@ class MultiStageModelBuilder(GRUBuilder2):
         """Returns True if transfer learning requires a second dataset."""
         requires_2nd =  self.transfer_type in ["difference", "contrastive"]
         return requires_2nd
-
-
 
 
     def pool_and_align_cases(self, dataframes):
@@ -313,8 +206,6 @@ class MultiStageModelBuilder(GRUBuilder2):
         }
         test_y["out_contrast"][np.isnan(test_output[0]) | np.isnan(test_output[1])] = np.nan  # ✅ Mask NaNs
 
-
-
         # todo: make this configurable
         for layer in ann.layers:
             if layer.name in ["gru_1", "gru_2"]:
@@ -349,7 +240,6 @@ class MultiStageModelBuilder(GRUBuilder2):
 
         # ✅ Main Training Phase (fine-tuning with a lower learning rate)
         if main_epochs and main_epochs > 0:
-
             # Unfreeze feature layers before main training. 
             # Todo: make this an options
             for layer in ann.layers:
