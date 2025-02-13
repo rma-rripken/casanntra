@@ -108,9 +108,31 @@ def fit_from_config(
                    main_epochs=main_epochs)
     
     # Save the model
+
+
+    """ Debug
+    import json
+    config = ann.get_config()
+    print(json.dumps(config, indent=2))  # Pretty-print model config
+
+
+    print("Debug: Checking for layers that support masking:")
+    for layer in ann.layers:
+        if hasattr(layer, "supports_masking") and layer.supports_masking:
+            print(f"Layer {layer.name} ({layer.__class__.__name__}) supports masking.")
+    for layer in ann.layers:
+        if hasattr(layer, 'compute_mask'):
+            print(f"Layer {layer.name} has a `compute_mask` method.")
+    """
+
     print(f"Saving model {name} to {save_model_fname}")
-    ann.save_weights(save_model_fname.replace(".h5", ".weights.h5"))
-    ann.save(save_model_fname, overwrite=True)
+    
+    ann.save_weights(save_model_fname+".weights.h5")
+    ann.compile(metrics=None,loss=None)
+    ann.save(save_model_fname+".h5", overwrite=True)
+    print(f"Save complete")
+    model_test_read = load_model(save_model_fname+".h5") #, custom_objects = builder.custom_objects)
+
 
 def read_config(configfile):
     """Reads YAML config file."""

@@ -1,6 +1,8 @@
 from tensorflow.keras.layers import Layer
 import tensorflow as tf
 
+
+
 class ModifiedExponentialDecayLayer(Layer):
     def __init__(self, a=1e-5, b=70000, **kwargs):
         super(ModifiedExponentialDecayLayer, self).__init__(**kwargs)
@@ -57,3 +59,11 @@ class TunableModifiedExponentialDecayLayer(Layer):
             "b": self.initial_b,
         })
         return config
+    
+
+
+
+
+
+
+custom_scaling = {"ModifiedExponentialDecayLayer": ModifiedExponentialDecayLayer}

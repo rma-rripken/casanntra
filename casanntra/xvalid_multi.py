@@ -14,6 +14,7 @@ def single_model_fit(builder, df_in, fit_in, fit_out, test_in, test_out,
     #       ann is the main model for inference
     ann = builder.build_model(input_layers, df_in)
     #todo: this was train_model 
+    print("Fitting model in single_model_fit")
     history, ann = builder.fit_model(ann, fit_in, fit_out, test_in, test_out, 
                             init_train_rate=init_train_rate,
                             init_epochs=init_epochs, 
@@ -23,9 +24,10 @@ def single_model_fit(builder, df_in, fit_in, fit_out, test_in, test_out,
     # Todo 
     print("Predicting data in single_model_fit") 
     test_pred = ann.predict(test_in)
-    print(f"type of test pred {type(test_pred)}")
     #history_serialized = base64.b64encode(pickle.dumps(history.history)).decode()
     print("Prediction complete")
+    del ann
+    print(f"Return type {type(test_pred)}")
     return test_pred  #, history_serialized
 
 def bulk_fit(builder, df_in, df_out, out_prefix, fit_in, fit_out, test_in, test_out,
@@ -127,8 +129,6 @@ def xvalid_fit_multi(df_in, df_out, builder, init_train_rate, init_epochs, main_
                 print(f"ifold={ifold} # train input data rows = {fit_in.shape[0]} # train out rows = {rep.shape[0]}")
                 print(f"ifold={ifold} # test input data rows = {test_in.shape[0]} # test out rows = {rep.shape[0]}")         
 
-                
-
             # ✅ Convert DataFrame inputs into structured dicts 
             idx = pd.IndexSlice
             # These libraries separate the inputs into individual dataframes matching the input names
@@ -138,11 +138,6 @@ def xvalid_fit_multi(df_in, df_out, builder, init_train_rate, init_epochs, main_
             test_in = builder.df_by_feature_and_time(test_in).drop(["datetime","case","fold"], level="var", axis=1)
             test_in = {name: test_in.loc[:,idx[name,:]].droplevel("var",axis=1) for name in builder.input_names}
 
-            print(f"ifold={ifold}, fit_out type: {type(fit_out)}")
-            print(f"ifold={ifold}, fit_out shape: {[f.shape for f in fit_out] if isinstance(fit_out, list) else fit_out.shape}")
-
-            print("Debug: fit_out shapes:", [o.shape for o in fit_out])
-            print("Debug: Any NaNs in fit_out[1]?", np.isnan(fit_out[1]).sum())
 
             future = executor.submit(single_model_fit, builder, df_in, fit_in, fit_out, test_in, test_out,
                                      out_prefix=out_prefix, init_epochs=init_epochs, init_train_rate=init_train_rate,

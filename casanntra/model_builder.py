@@ -6,7 +6,7 @@ import numpy as np
 import tensorflow as tf
 import tensorflow.keras.layers as layers
 
-from tensorflow.keras.layers import Dense, Input, Lambda
+from tensorflow.keras.layers import Dense, Input
 from tensorflow.keras.layers.experimental.preprocessing import Normalization, IntegerLookup, Rescaling #CategoryEncoding
 from tensorflow.keras import regularizers
 from tensorflow.keras.losses import MeanSquaredLogarithmicError
@@ -110,7 +110,10 @@ class ModelBuilder(object):
         self.builder_args = {}        # Used for per-step configuration See process_config
 
         # ✅ Centralized custom object registration
-        self.custom_objects = {"UnscaleLayer": UnscaleLayer}
+        self.custom_objects = {"UnscaleLayer": UnscaleLayer,
+                               "ModifiedExponentialDecayLayer": ModifiedExponentialDecayLayer}
+
+        
 
     def set_builder_args(self, builder_args):
         """Allows builder_args to be updated dynamically between steps. No default implementation"""
@@ -138,8 +141,8 @@ class ModelBuilder(object):
             return None  # No model to load
         
         print(f"Loading model from {self.load_model_fname} with registered custom objects.")
-        base_model = load_model(self.load_model_fname, custom_objects=self.custom_objects)
-        base_model.load_weights(self.load_model_fname.replace(".h5", ".weights.h5"))
+        base_model = load_model(self.load_model_fname+".h5", custom_objects=self.custom_objects)
+        base_model.load_weights(self.load_model_fname+".weights.h5")
 
         return base_model
 
@@ -254,7 +257,7 @@ class ModelBuilder(object):
             prepro_name=f"{feature}_prepro" 
             if feature in ["dcc", "smscg"] and False:
                 feature_layer = Normalization(axis=None,name=prepro_name)  # Rescaling(1.0)
-            elif feature in [ "sac_flow", "ndo"] and thresh is not None:
+            elif feature in [ "northern_flow", "sac_flow", "ndo"] and thresh is not None:
                 feature_layer = Rescaling(1 / thresh, name=prepro_name)  # Normalization(axis=None)
             elif feature == "sjr_flow" and thresh is not None:
                 feature_layer = Rescaling(0.25 / thresh, name=prepro_name)  # Normalization(axis=None)                
@@ -475,6 +478,16 @@ class ModelBuilder(object):
         return df_x
 
 
+class StackLayer(layers.Layer):
+    def __init__(self, **kwargs):
+        super(StackLayer, self).__init__(**kwargs)
+
+    def call(self, inputs):
+        return tf.stack(inputs, axis=-1)
+
+    def get_config(self):
+        return super().get_config()
+
 
 #########################################################
 
@@ -517,7 +530,7 @@ class GRUBuilder2(ModelBuilder):
             prepro_name=f"{feature}_prepro" 
             if feature in ["dcc", "smscg"] and False:
                 feature_layer = Normalization(axis=None,name=prepro_name)  # Rescaling(1.0)
-            elif feature in [ "sac_flow", "ndo"] and thresh is not None:
+            elif feature in [ "northern_flow", "sac_flow", "ndo"] and thresh is not None:
                 # Define the model. Use the test_scaling file to refine parameters
                 feature_layer = ModifiedExponentialDecayLayer(a=1.e-5, b=70000., name=prepro_name)
                 #feature_layer = Rescaling(1 / thresh, name=prepro_name)  # Normalization(axis=None)
@@ -536,7 +549,6 @@ class GRUBuilder2(ModelBuilder):
         return layers
 
 
-
     def build_model(self,input_layers, input_data):
         """ Build or load the model architecture. Or load an old one and extend."""
         
@@ -552,7 +564,7 @@ class GRUBuilder2(ModelBuilder):
         else:
             print(f"Creating from scratch")
             prepro_layers = self.prepro_layers(input_layers,input_data)          
-            x = layers.Lambda(lambda x: tf.stack(x,axis=-1))(prepro_layers) 
+            x = StackLayer(name="stack_layer")(prepro_layers)
             x = layers.GRU(units=32, return_sequences=True, 
                                 activation='sigmoid',name='gru_1')(x)
             x = layers.GRU(units=16, return_sequences=False, 

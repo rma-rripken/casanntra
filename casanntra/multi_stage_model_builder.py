@@ -2,14 +2,39 @@ from keras.models import load_model
 from tensorflow.keras import layers, regularizers, Model
 import tensorflow as tf
 import pandas as pd
-from casanntra.model_builder import GRUBuilder2
+from casanntra.model_builder import GRUBuilder2,StackLayer
 import numpy  as np
 import tensorflow as tf
 from tensorflow.keras.layers import Layer
 
 
-
+##@tf.keras.utils.register_keras_serializable
 def masked_mae(y_true, y_pred):
+    # Mask NaN values, replace by 0
+    y_true = tf.where(tf.math.is_nan(y_true), y_pred, y_true)
+   
+    # Calculate absolute differences
+    absolute_differences = tf.abs(y_true - y_pred)
+    
+    # Compute the mean, ignoring potential NaN values (if any remain after replacement)
+    mae = tf.reduce_mean(absolute_differences)
+    
+    return mae
+
+#@tf.keras.utils.register_keras_serializable
+def masked_mse(y_true, y_pred):
+    # Mask NaN values, replace by 0
+    y_true = tf.where(tf.math.is_nan(y_true), y_pred, y_true)
+   
+    # Calculate absolute differences
+    absolute_differences = tf.square(y_true - y_pred)
+    
+    # Compute the mean, ignoring potential NaN values (if any remain after replacement)
+    mae = tf.reduce_mean(absolute_differences)
+    
+    return mae
+
+def masked_mae1(y_true, y_pred):
     """Computes MAE while ignoring NaN values and ensuring NaN-safe computation."""
     mask = tf.math.logical_not(tf.math.is_nan(y_true)) & tf.math.logical_not(tf.math.is_nan(y_pred))
     valid_values = tf.boolean_mask(y_true - y_pred, mask)
@@ -21,7 +46,7 @@ def masked_mae(y_true, y_pred):
         lambda: tf.constant(0.0, dtype=tf.float32)  # ✅ Return 0 loss if no valid values
     )
 
-def masked_mse(y_true, y_pred):
+def masked_mse2(y_true, y_pred):
     """Computes MAE while ignoring NaN values and ensuring NaN-safe computation."""
     mask = tf.math.logical_not(tf.math.is_nan(y_true)) & tf.math.logical_not(tf.math.is_nan(y_pred))
     valid_values = tf.boolean_mask(y_true - y_pred, mask)
@@ -76,7 +101,7 @@ class MultiStageModelBuilder(GRUBuilder2):
             self.old_weights = self.old_dense_layer.get_weights()
         else:
             prepro_layers = self.prepro_layers(input_layers, input_data)
-            x = layers.Lambda(lambda x: tf.stack(x, axis=-1))(prepro_layers)
+            x = StackLayer(name="stack_layer")(prepro_layers)
             x = layers.GRU(units=32, return_sequences=True, activation='sigmoid', name='gru_1')(x)
             feature_extractor = layers.GRU(units=16, return_sequences=False, activation='sigmoid', name='gru_2')(x)
             input_layer = input_layers
@@ -114,9 +139,6 @@ class MultiStageModelBuilder(GRUBuilder2):
         else:
             out_absolute = layers.Dense(units=len(self.output_names), name="out_absolute", activation='elu')(feature_extractor)
             model = Model(inputs=input_layer, outputs=out_absolute)
-            model.add_loss(masked_mae(self.output_names[0], out_absolute))
-            model.add_metric(masked_mse(self.output_names[0], out_absolute), name="mse_absolute")
-
             return model
 
 
@@ -182,6 +204,18 @@ class MultiStageModelBuilder(GRUBuilder2):
         return final_dfs
 
     def fit_model(self, ann, fit_input, fit_output, test_input, test_output, init_train_rate, init_epochs, main_train_rate, main_epochs):
+        if self.transfer_type == "contrastive":
+            return self._fit_model_contrastive(ann, fit_input, fit_output, 
+                                                    test_input, test_output, 
+                                                    init_train_rate, init_epochs, 
+                                                    main_train_rate, main_epochs)
+        else:
+            return self._fit_model_direct(ann, fit_input, fit_output, 
+                                          test_input, test_output, 
+                                          init_train_rate, init_epochs, 
+                                          main_train_rate, main_epochs)            
+
+    def _fit_model_contrastive(self, ann, fit_input, fit_output, test_input, test_output, init_train_rate, init_epochs, main_train_rate, main_epochs):
         """Handles model training in two stages: initial training and fine-tuning."""
         
         
@@ -274,3 +308,63 @@ class MultiStageModelBuilder(GRUBuilder2):
 
         print("=== DEBUG: Completed Main Training Phase ===")
         return history, ann
+    
+
+    def _fit_model_direct(self, ann, fit_input, fit_output, test_input, test_output, init_train_rate, init_epochs, main_train_rate, main_epochs):
+
+        """Custom fit_model that supports staged learning and multi-output cases with dynamic loss application."""
+
+        print("direct or base training")
+        loss_function = "mae"
+        metrics = ["mae","mse"]
+        output_names = ["output"] #[list(self.output_names.keys())[0]]  # Single-output model
+        train_model = ann  # No special wrapper needed
+        # ✅ Compile Model (Normal losses for main outputs, `add_loss()` handles contrast)
+        loss_dict = {name: loss_function for name in output_names}
+
+        # todo: make this configurable
+        #for layer in ann.layers:
+        #    if layer.name in ["gru_1", "gru_2"]:
+        #        layer.trainable = False
+
+        train_model.compile(
+            optimizer=tf.keras.optimizers.Adamax(learning_rate=init_train_rate, clipnorm=0.5),
+            loss=loss_function,
+            metrics=metrics, 
+            run_eagerly=False
+        )
+    
+
+        print("=== DEBUG: Initial Training Phase ===")
+        # ✅ Initial Training Phase
+        history = train_model.fit(
+            fit_input, fit_output,
+            epochs=init_epochs,
+            batch_size=64,
+            validation_data=(test_input, test_output),
+            verbose=2,
+            shuffle=True
+        )
+
+        print("=== DEBUG: Main Training Phase ===")
+        # Main Training Phase (Slower Learning Rate)
+        if main_epochs and main_epochs > 0:
+
+
+            train_model.compile(
+                optimizer=tf.keras.optimizers.Adamax(learning_rate=main_train_rate),
+                loss=loss_function,
+                metrics=metrics,
+                run_eagerly=False
+            )
+            history = train_model.fit(
+                fit_input, fit_output,
+                epochs=main_epochs,
+                batch_size=64,
+                validation_data=(test_input, test_output),
+                verbose=2,
+                shuffle=True
+            )
+        print("=== DEBUG: Completed Main Training Phase ===")
+        return history, ann  # ✅ Base model is returned for inference
+
