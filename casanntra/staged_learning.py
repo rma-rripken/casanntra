@@ -24,23 +24,100 @@ model_builders = {
 }
 
 
+
 def fit_from_config(
     builder,
     name,
-    input_prefix,  # prefix for input csv files (minus "_1.csv")
+    input_prefix,  
     output_prefix,
-    input_mask_regex,  # None     # regex to filter out (not implemented)
-    save_model_fname,  # Name for saved model, e.g. dsm2_base_gru2.h5
-    load_model_fname,  # Name for loading model or None if it is an original fit
-    pool_size,  # Pool size 1 or 2x pool size would cover all the folds
-    target_fold_length,  # 180d
-    pool_aggregation,  # Used to collapse cross-validation folds for large cases
-    init_train_rate,  # Initial training rate
-    init_epochs,  # Number of epochs for initial warm-up training
-    main_train_rate,  # Training rate for main phase
-    main_epochs,  # Example: 110
+    input_mask_regex,  
+    save_model_fname,  
+    load_model_fname,  
+    pool_size,  
+    target_fold_length,  
+    pool_aggregation,  
+    init_train_rate,  
+    init_epochs,  
+    main_train_rate,  
+    main_epochs,  
 ):
-    """Performs a configured sequence of named fitting steps from yaml."""
+    """
+    Fits a machine learning model using staged training and cross-validation.
+
+    This function orchestrates a structured training sequence, handling data loading,
+    cross-validation setup, scaling, model fitting, and final model saving. It supports
+    training both standard models and transfer-learning scenarios with secondary datasets.
+
+    Parameters
+    ----------
+    builder : object
+        An instance of a model builder (e.g., `GRUBuilder2` or `MultiStageModelBuilder`).
+    name : str
+        A descriptive name for the model, used in saving logs and outputs.
+    input_prefix : str
+        Prefix for input CSV files (excluding `_1.csv` suffix).
+    output_prefix : str
+        Prefix for output files.
+    input_mask_regex : list(str) or None
+        Regular expressions to filter input features. Example is [r'schism_base_1.*csv']
+    save_model_fname : str
+        Filename to save the trained model (excluding `.h5` extension).
+    load_model_fname : str or None
+        Filename for loading an existing model. If `None`, training starts from scratch.
+    pool_size : int
+        Number of cross-validation folds or pooling groups. For workstations with 20 cores, 12 is good
+    target_fold_length : int
+        Length of time-based validation folds in days, typically 180d.
+    pool_aggregation : bool
+        Whether to aggregate folds to reduce computational load for large datasets. Usually true if the
+        number of cases is very large compared to the pool size
+    init_train_rate : float
+        Initial training learning rate.
+    init_epochs : int
+        Number of epochs for the initial warm-up training phase.
+    main_train_rate : float
+        Learning rate for the main training phase.
+    main_epochs : int
+        Number of epochs for the main training phase.
+
+    Returns
+    -------
+    None
+        The function does not return a value but saves trained models and outputs to disk.
+
+    Examples
+    --------
+    >>> builder = GRUBuilder2(...)
+    >>> fit_from_config(
+    ...     builder, 
+    ...     name="my_model",
+    ...     input_prefix="dataset",
+    ...     output_prefix="results",
+    ...     input_mask_regex=None,
+    ...     save_model_fname="my_model",
+    ...     load_model_fname=None,
+    ...     pool_size=12,
+    ...     target_fold_length='180d',
+    ...     pool_aggregation=False,
+    ...     init_train_rate=0.001,
+    ...     init_epochs=10,
+    ...     main_train_rate=0.0005,
+    ...     main_epochs=100
+    ... )
+
+
+
+    Notes
+    -----
+    - Uses `read_data()` to load input data from CSV files.
+    - Arguments are often provided via **config read from yaml rather than item by item
+    - If `builder.requires_secondary_data()` is `True`, it aligns primary and secondary datasets.
+    - Applies `xvalid_time_folds()` to create time-based validation splits.
+    - Calls `xvalid_fit_multi()` for cross-validation training.
+    - Calls `bulk_fit()` to finalize training and save the model.
+    - Saves trained model weights (`.weights.h5`) and full model (`.h5`).
+
+    """
 
     builder.load_model_fname = load_model_fname
 
@@ -98,7 +175,7 @@ def fit_from_config(
     # ✅ Write scaled reference outputs, works for single dataframe or list
     write_reference_outputs(output_prefix, df_out, builder, is_scaled=True)
 
-    # Perform cross-validation fitting (safe within multithreading)
+    # Perform cross-validation fitting (safe within multiprocessing)
     xvalid_fit_multi(
         df_in,
         df_out,

@@ -2,6 +2,40 @@ from functools import wraps
 
 
 def single_or_list(*arg_names):
+        """
+    Decorator that allows a function to accept either a single input or a list of inputs
+    and returns the output in the same format (single item or list).
+
+    If a list is provided, the function is applied to each element, and the results
+    are returned as a list. If a single value is provided, the function is applied
+    directly and the single result is returned.
+
+    Parameters
+    ----------
+    func : callable
+        The function to be decorated.
+
+    Returns
+    -------
+    callable
+        A wrapped function that can handle both single values and lists.
+
+    Examples
+    --------
+    >>> @single_or_list
+    ... def square(x):
+    ...     return x * x
+    ...
+    >>> square(4)
+    16
+    >>> square([1, 2, 3])
+    [1, 4, 9]
+
+    Notes
+    -----
+    - If the input is a list or tuple, the function is applied element-wise.
+    - The returned output preserves the input type (single item → single output, list → list output).
+    """
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):

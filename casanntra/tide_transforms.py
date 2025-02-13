@@ -1,5 +1,11 @@
+""" Experimental code for manipulating the principal components of tidal energy and subtidal (filtered) water levels
+    This did not go far and is deprecated.
+"""
+
 import pandas as pd
 from sklearn.decomposition import PCA
+
+
 
 
 def difference(x):
