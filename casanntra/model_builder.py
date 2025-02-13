@@ -47,6 +47,7 @@ class ModelBuilder(object):
 
         # ✅ Centralized custom object registration
         self.custom_objects = {"UnscaleLayer": UnscaleLayer,
+                               "StackLayer": StackLayer,
                                "ModifiedExponentialDecayLayer": ModifiedExponentialDecayLayer}
 
         
@@ -443,6 +444,7 @@ class GRUBuilder2(ModelBuilder):
         self.register_custom_object("ModifiedExponentialDecayLayer", ModifiedExponentialDecayLayer)
         self.register_custom_object("TunableModifiedExponentialDecayLayer", TunableModifiedExponentialDecayLayer)
         
+        
     def prepro_layers(self, inp_layers, df):
         """ Create the preprocessing layers, one per location, which will be concatenated later.
             This function performs any sort of special scaling. Here the superclass is overridden.
@@ -628,3 +630,21 @@ class MLPBuilder1(ModelBuilder):
         
         return history, ann
 
+
+    def wrap_with_unscale_layer(self, trained_model):
+        """ Wraps a trained model that uses scaled outputs (normalized)
+            with an UnscaleLayer to convert outputs back to real-world values.
+            This is done here to ensure consistency of scaling       
+        """
+        from tensorflow.keras.models import Model
+        from casanntra.model_builder import UnscaleLayer  # Ensure this is available
+
+        output_scales = list(self.output_names.values())  # Retrieve output scale factors
+
+        # Add UnscaleLayer after the trained model's output
+        unscaled_output = UnscaleLayer(output_scales, name="unscaled_output")(trained_model.output)
+
+        # Create a new wrapped model
+        wrapped_model = Model(inputs=trained_model.input, outputs=unscaled_output)
+        
+        return wrapped_model
