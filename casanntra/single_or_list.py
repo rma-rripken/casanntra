@@ -2,7 +2,7 @@ from functools import wraps
 
 
 def single_or_list(*arg_names):
-        """
+    """
     Decorator that allows a function to accept either a single input or a list of inputs
     and returns the output in the same format (single item or list).
 
