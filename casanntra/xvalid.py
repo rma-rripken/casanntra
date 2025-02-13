@@ -57,53 +57,66 @@ import matplotlib.pyplot as plt
 """
 
 
-
-
-
-def xvalid_fit(df_in,df_out,builder,nepochs=80,plot_folds=[],plot_locs=["cse","bdl","emm2","jer","rsl"],out_prefix="ann_diag"):
+def xvalid_fit(
+    df_in,
+    df_out,
+    builder,
+    nepochs=80,
+    plot_folds=[],
+    plot_locs=["cse", "bdl", "emm2", "jer", "rsl"],
+    out_prefix="ann_diag",
+):
     """Splits up the input by fold, witholding each fold in turn, building and training the model for each
-       and then evaluating the witheld data
+    and then evaluating the witheld data
     """
 
     bad_plot_loc = [x for x in plot_locs if x not in builder.output_names]
     if len(bad_plot_loc) > 0:
         raise ValueError(f"Some plot locations are not in the output: {bad_plot_loc}")
 
-    df_out.to_csv(f"{out_prefix}_xvalid_ref_out.csv",float_format="%.3f",date_format="%Y-%m-%dT%H:%M",header=True,index=True)
+    df_out.to_csv(
+        f"{out_prefix}_xvalid_ref_out.csv",
+        float_format="%.3f",
+        date_format="%Y-%m-%dT%H:%M",
+        header=True,
+        index=True,
+    )
 
-
-
-    # This constructs inputs with antecedent/lagged values, keeping the cases separate 
+    # This constructs inputs with antecedent/lagged values, keeping the cases separate
     # This only makes sense for the variables that are ANN predictors, as determined by input_names
     # not variables "datetime," "fold" and "case". Those are preserved.
     inputs_lagged = builder.calc_antecedent_preserve_cases(df_in)
 
     # Lagging causes some data at the beginning to be trimmed. This performs the same trim on the outputs
-    outputs_trim = df_out.loc[inputs_lagged.index,:]
+    outputs_trim = df_out.loc[inputs_lagged.index, :]
 
-
-    # Pre-construct data structure that will receive predictions for data left out. 
-    outputs_xvalid= pd.DataFrame().reindex_like(outputs_trim)
-    outputs_xvalid[["datetime","case","fold"]] = outputs_trim[["datetime","case","fold"]]
+    # Pre-construct data structure that will receive predictions for data left out.
+    outputs_xvalid = pd.DataFrame().reindex_like(outputs_trim)
+    outputs_xvalid[["datetime", "case", "fold"]] = outputs_trim[
+        ["datetime", "case", "fold"]
+    ]
 
     # Dictionary that will store predictions of all times from all the folds (key will be the fold identifier)
     # This includes biased predictions made of data in fold ifold=N during folds when that data are used for fitting
     all_outs = {}
     xvalid_outs = []
 
-
     for ifold in df_in.fold.unique():
         print(f"Starting fit for fold {ifold}")
-        fit_in = inputs_lagged.loc[inputs_lagged.fold != ifold,:]
-        
-        #fit_in = fit_in.loc[fit_in.ndo_lag0 < 70000.,:]
-        #fit_in = fit_in.loc[fit_in.sac_flow_lag0 < 70000.,:]
-        fit_out = df_out.loc[fit_in.index,builder.output_names]
-        test_in = inputs_lagged.loc[inputs_lagged.fold == ifold,:]
-        test_out = df_out.loc[test_in.index,builder.output_names]
-        
-        print(f"ifold={ifold} # train input data rows = {fit_in.shape[0]} # train out rows = {fit_out.shape[0]}")
-        print(f"ifold={ifold} # test input data rows = {test_in.shape[0]} # test out rows = {test_out.shape[0]}")
+        fit_in = inputs_lagged.loc[inputs_lagged.fold != ifold, :]
+
+        # fit_in = fit_in.loc[fit_in.ndo_lag0 < 70000.,:]
+        # fit_in = fit_in.loc[fit_in.sac_flow_lag0 < 70000.,:]
+        fit_out = df_out.loc[fit_in.index, builder.output_names]
+        test_in = inputs_lagged.loc[inputs_lagged.fold == ifold, :]
+        test_out = df_out.loc[test_in.index, builder.output_names]
+
+        print(
+            f"ifold={ifold} # train input data rows = {fit_in.shape[0]} # train out rows = {fit_out.shape[0]}"
+        )
+        print(
+            f"ifold={ifold} # test input data rows = {test_in.shape[0]} # test out rows = {test_out.shape[0]}"
+        )
 
         input_layers = builder.input_layers()
 
@@ -114,45 +127,73 @@ def xvalid_fit(df_in,df_out,builder,nepochs=80,plot_folds=[],plot_locs=["cse","b
 
         idx = pd.IndexSlice
         # These libraries separate the inputs into individual dataframes matching the input names
-        fit_in = builder.df_by_feature_and_time(fit_in).drop(["datetime","case","fold"], level="var", axis=1)
-        fit_in =  {name: fit_in.loc[:,idx[name,:]].droplevel("var",axis=1) for name in builder.input_names}
+        fit_in = builder.df_by_feature_and_time(fit_in).drop(
+            ["datetime", "case", "fold"], level="var", axis=1
+        )
+        fit_in = {
+            name: fit_in.loc[:, idx[name, :]].droplevel("var", axis=1)
+            for name in builder.input_names
+        }
 
         testdt = test_in.datetime
-        test_in = builder.df_by_feature_and_time(test_in).drop(["datetime","case","fold"], level="var", axis=1)
-        test_in =  {name: test_in.loc[:,idx[name,:]].droplevel("var",axis=1) for name in builder.input_names}
+        test_in = builder.df_by_feature_and_time(test_in).drop(
+            ["datetime", "case", "fold"], level="var", axis=1
+        )
+        test_in = {
+            name: test_in.loc[:, idx[name, :]].droplevel("var", axis=1)
+            for name in builder.input_names
+        }
 
-
-        history,ann = builder.fit_model(ann, fit_in, fit_out, test_in, test_out, nepochs=nepochs )
+        history, ann = builder.fit_model(
+            ann, fit_in, fit_out, test_in, test_out, nepochs=nepochs
+        )
         test_pred = ann.predict(test_in)
-        outputs_xvalid.loc[test_out.index,builder.output_names] = test_pred   # should be numpy array
+        outputs_xvalid.loc[test_out.index, builder.output_names] = (
+            test_pred  # should be numpy array
+        )
         print("outputs_xvalid")
         print(outputs_xvalid)
         checkname = f"{out_prefix}_check_{ifold}.csv"
-        print(f"Completed fit for fold {ifold}. Writing check point csv to {checkname}") 
+        print(f"Completed fit for fold {ifold}. Writing check point csv to {checkname}")
 
-        outputs_xvalid.to_csv(checkname,float_format="%.3f",date_format="%Y-%m-%dT%H:%M",header=True,index=True)
-        
+        outputs_xvalid.to_csv(
+            checkname,
+            float_format="%.3f",
+            date_format="%Y-%m-%dT%H:%M",
+            header=True,
+            index=True,
+        )
 
         if (plot_folds == "all") or (ifold in plot_folds):
-            height = 2.5+1.5*len(plot_locs)
-            fig,axes = plt.subplots(len(plot_locs),sharex=True,figsize=(8,height),layout="constrained",squeeze=False)            
-            for iplot,loc in enumerate(plot_locs):
-                ax = axes[iplot,0]
+            height = 2.5 + 1.5 * len(plot_locs)
+            fig, axes = plt.subplots(
+                len(plot_locs),
+                sharex=True,
+                figsize=(8, height),
+                layout="constrained",
+                squeeze=False,
+            )
+            for iplot, loc in enumerate(plot_locs):
+                ax = axes[iplot, 0]
                 iloc = builder.output_names.index(loc)
-                ax.plot(testdt,test_out.loc[:,loc])
-                ax.plot(testdt,test_pred[:,iloc])
-                if iplot==0:
-                    ax.legend(["model","surrogate"])
+                ax.plot(testdt, test_out.loc[:, loc])
+                ax.plot(testdt, test_pred[:, iloc])
+                if iplot == 0:
+                    ax.legend(["model", "surrogate"])
                 ax.set_title(f"Xvalid Fold: {ifold} Location: {loc}")
-                ax.tick_params(axis='x', labelrotation=60) 
+                ax.tick_params(axis="x", labelrotation=60)
             fig.savefig(f"{out_prefix}_{ifold}.png")
 
-
-    outputs_xvalid.to_csv(f"{out_prefix}_xvalid.csv",float_format="%.3f",date_format="%Y-%m-%dT%H:%M",header=True,index=True)
+    outputs_xvalid.to_csv(
+        f"{out_prefix}_xvalid.csv",
+        float_format="%.3f",
+        date_format="%Y-%m-%dT%H:%M",
+        header=True,
+        index=True,
+    )
 
 
 if __name__ == "__main__":
 
-    #test_xvalid_mlp()
+    # test_xvalid_mlp()
     test_xvalid_gru()
-

@@ -2,7 +2,6 @@ from tensorflow.keras.layers import Layer
 import tensorflow as tf
 
 
-
 class ModifiedExponentialDecayLayer(Layer):
     def __init__(self, a=1e-5, b=70000, **kwargs):
         super(ModifiedExponentialDecayLayer, self).__init__(**kwargs)
@@ -12,17 +11,22 @@ class ModifiedExponentialDecayLayer(Layer):
     def call(self, inputs):
         # Implement the modified exponential decay function
         exp_decay = tf.exp(-self.a * inputs)
-        exp_decay_tapered = (exp_decay - tf.exp(-self.a * self.b)) / (1 - tf.exp(-self.a * self.b))
+        exp_decay_tapered = (exp_decay - tf.exp(-self.a * self.b)) / (
+            1 - tf.exp(-self.a * self.b)
+        )
         return exp_decay_tapered
 
     def get_config(self):
         # Return the configuration of the layer for serialization
         config = super(ModifiedExponentialDecayLayer, self).get_config()
-        config.update({
-            "a": self.a,
-            "b": self.b,
-        })
+        config.update(
+            {
+                "a": self.a,
+                "b": self.b,
+            }
+        )
         return config
+
 
 class TunableModifiedExponentialDecayLayer(Layer):
     def __init__(self, a=1e-5, b=70000, **kwargs):
@@ -48,22 +52,21 @@ class TunableModifiedExponentialDecayLayer(Layer):
 
     def call(self, inputs):
         exp_decay = tf.exp(-self.a * inputs)
-        clipped_denominator = tf.clip_by_value(1 - tf.exp(-self.a * self.b), 1e-6, float("inf"))
+        clipped_denominator = tf.clip_by_value(
+            1 - tf.exp(-self.a * self.b), 1e-6, float("inf")
+        )
         exp_decay_tapered = (exp_decay - tf.exp(-self.a * self.b)) / clipped_denominator
         return exp_decay_tapered
 
     def get_config(self):
         config = super(TunableModifiedExponentialDecayLayer, self).get_config()
-        config.update({
-            "a": self.initial_a,
-            "b": self.initial_b,
-        })
+        config.update(
+            {
+                "a": self.initial_a,
+                "b": self.initial_b,
+            }
+        )
         return config
-    
-
-
-
-
 
 
 custom_scaling = {"ModifiedExponentialDecayLayer": ModifiedExponentialDecayLayer}
