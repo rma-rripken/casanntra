@@ -10,15 +10,17 @@
 - **Case**: A distinct configuration of input conditions, typically representing a specific set of boundary conditions or forcing parameters in the simulation model. A given year may be represented by many cases each with a different perturbation. A case is the way we represent design of experiments (DOE).
 - **Cross-validation**: A strategy to maximize data utility by dividing cases into training and validation sets while ensuring temporal and case-based consistency. In cross-validation a `fold` is witheld.
 
-## Motivation for Cross-Validation
+## Cross-Validation
 Higher-dimensional models often have limited training data due to computational constraints. To effectively assess model generalization, **K-fold cross-validation** is applied, ensuring:
 - Cases remain intact across folds.
-- A **target duration** is maintained, ensuring the trained ANN learns meaningful temporal patterns.
+- A **target duration** is maintained, ensuring the trained ANN learns meaningful temporal patterns. Because training data tends to include histories of data (90 past days typical), cases and folds and histories have to be managed together so that we don't mix data from different cases.
+- The folds are currently run using multiprocessing on concurrent futures. Someone with experience in TensorFlow might be able to come up with a distributed strategy in TF that still preserves the folding strategy. 
 
 ## Input Normalization and Scaling
 Casanntra applies **feature normalization and scaling** to inputs and outputs to improve training stability. This includes:
 - Standardization (zero mean, unit variance) where appropriate.
 - Min-max scaling for bounded variables.
+- Transformations to make up for poor gradients and near-saturation, which are inherant in the Bay-Delta system on the larger rivers. Our rivers fluctuate to high flows (300,000cfs) which is an order of magnitude higher than the level that elicits salinity responses. See the `scaling.py` folder. This should become configurable in the near future.
 - Ensuring consistent transformations between base and transfer learning scenarios.
 
 ## Transfer Learning Strategies
