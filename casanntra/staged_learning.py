@@ -221,15 +221,11 @@ def fit_from_config(
             print(f"Layer {layer.name} has a `compute_mask` method.")
     """
 
-    print(f"Saving model {name} to {save_model_fname}")
+    print(f"Saving model {name} to {save_model_fname+'.h5'}")
 
     ann.save_weights(save_model_fname + ".weights.h5")
     ann.compile(metrics=None, loss=None)
     ann.save(save_model_fname + ".h5", overwrite=True)
-    print(f"Save complete")
-    model_test_read = load_model(
-        save_model_fname + ".h5"
-    )  # , custom_objects = builder.custom_objects)
 
 
 def read_config(configfile):
