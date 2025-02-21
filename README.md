@@ -42,6 +42,28 @@ Casanntra implements multiple flavors of **transfer learning**, enabling surroga
 
 Each of these methods applies a combination of **"freezing" and restarting with low learning rates** to control model updates effectively. As part of this abstraction, each step in the training sequence consists of an **initial phase** and a **main phase**, ensuring stability and gradual adaptation to the new data.
 
+
+### Overview
+The trained neural network models in this framework are stored in **scaled units** for numerical stability during training. However, when deploying models for real-world applications or integrating with external frameworks (e.g., Java-based systems, TensorFlow Serving), it is often necessary to convert the model outputs back to **native physical units**.
+
+## Postprocessing: Export and Conversion to Native Units
+This section outlines the procedures for:
+- **Wrapping trained models** with an `UnscaleLayer` to restore outputs to native units.
+- **Exporting trained models** from `.h5` to TensorFlow’s **SavedModel (`.pb`) format**.
+- **Checking model predictions** after conversion.
+
+### 1. Exporting a Model with Native Units
+By default, models are trained with scaled output variables (e.g., salinity, flow rates). The `UnscaleLayer` applies the inverse scaling transformation to produce **real-world values** at inference time.
+
+#### **Conversion Process: H5 → TF SavedModel Format**
+To convert an `.h5` model into **TensorFlow’s SavedModel format**, follow these steps:
+1. **Find the trained model (`.h5`) and YAML config (`.yml`) used in training.**
+2. **Run the conversion script**:
+   ```bash
+   python convert_and_validate.py transfer_config.yml my_trained_model.h5 my_input_data.csv
+
+
+
 ## Next Steps
 - **Expand documentation** to include example workflows.
 - **Provide visualizations** demonstrating case divisions and cross-validation splits.
