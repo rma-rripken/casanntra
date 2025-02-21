@@ -52,7 +52,7 @@ This section outlines the procedures for:
 - **Exporting trained models** from `.h5` to TensorFlow’s **SavedModel (`.pb`) format**.
 - **Checking model predictions** after conversion.
 
-### 1. Exporting a Model with Native Units
+### Exporting a Model with Native Units
 By default, models are trained with scaled output variables (e.g., salinity, flow rates). The `UnscaleLayer` applies the inverse scaling transformation to produce **real-world values** at inference time.
 
 #### **Conversion Process: H5 → TF SavedModel Format**
@@ -61,7 +61,6 @@ To convert an `.h5` model into **TensorFlow’s SavedModel format**, follow thes
 2. **Run the conversion script**:
    ```bash
    python convert_and_validate.py transfer_config.yml my_trained_model.h5 my_input_data.csv
-
 
 
 ## Next Steps
