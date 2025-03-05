@@ -6,7 +6,7 @@ import numpy as np
 import tensorflow as tf
 import tensorflow.keras.layers as layers
 
-from tensorflow.keras.layers import Dense, Input
+from tensorflow.keras.layers import Dense, Input, Layer
 from tensorflow.keras.layers.experimental.preprocessing import Normalization, IntegerLookup, Rescaling #CategoryEncoding
 from tensorflow.keras import regularizers
 from tensorflow.keras.losses import MeanSquaredLogarithmicError
@@ -15,20 +15,39 @@ from sklearn.metrics import r2_score, mean_squared_error
 import matplotlib.pyplot as plt
 import os
 
+import tensorflow as tf
+from tensorflow.keras.layers import Layer
 
-
-class UnscaleLayer(tf.keras.layers.Layer):
+class UnscaleLayer(Layer):
     def __init__(self, output_scales, **kwargs):
+        """
+        A layer that rescales a single model output tensor to its original units.
+
+        Parameters:
+        - output_scales: A list or array of scaling factors for each feature (should match `nfeature`).
+        """
         super(UnscaleLayer, self).__init__(**kwargs)
-        self.output_scales = tf.constant(output_scales, dtype=tf.float32)
+        self.output_scales = tf.constant(output_scales, dtype=tf.float32)  #  Shape: (nfeature,)
 
     def call(self, inputs):
-        return inputs * self.output_scales  # ✅ Rescales ANN’s output
+        """
+        Apply the unscale transformation to the input tensor.
+
+        Expected input: A single tensor of shape `(nbatch, nfeature)`.
+        """
+        output = tf.multiply(inputs, self.output_scales)  #  Ensure element-wise multiplication
+
+        return output
 
     def get_config(self):
+        """
+        Returns the configuration for serialization.
+        """
         config = super().get_config()
         config.update({"output_scales": self.output_scales.numpy().tolist()})
         return config
+
+
 
 
 def mean_squared_error2(y_true, y_pred):
@@ -45,7 +64,7 @@ class ModelBuilder(object):
         self.load_model_fname = None  # Used for transfer learning
         self.builder_args = {}        # Used for per-step configuration See process_config
 
-        # ✅ Centralized custom object registration
+        #  Centralized custom object registration
         self.custom_objects = {"UnscaleLayer": UnscaleLayer,
                                "StackLayer": StackLayer,
                                "ModifiedExponentialDecayLayer": ModifiedExponentialDecayLayer}
@@ -88,7 +107,7 @@ class ModelBuilder(object):
         """Creates an unscaled version of an existing output layer for inference purposes."""
         output_scales = list(self.output_names.values())  # Extract scale factors
 
-        # ✅ Unscaled output for inference
+        #  Unscaled output for inference
         return UnscaleLayer(output_scales, name="unscaled_output")(scaled_output)
 
 
@@ -414,6 +433,29 @@ class ModelBuilder(object):
         df_x = df2.join(df_x, how="right")
         return df_x
 
+    def wrap_with_unscale_layer(self, trained_model):
+        """Wraps a trained model with individual UnscaleLayer instances for each output tensor."""
+        
+        output_scales = list(self.output_names.values())  #  Should be of shape (nfeature,)
+        output_names = ["base", "suisun", "contrast"]  # Default names, can be made configurable
+
+        #  Separate UnscaleLayer instances for each output tensor
+        unscaled_base = UnscaleLayer(output_scales, name="unscale_base")(trained_model.output[0])
+        unscaled_suisun = UnscaleLayer(output_scales, name="unscale_suisun")(trained_model.output[1])
+        unscaled_contrast = UnscaleLayer(output_scales, name="unscale_contrast")(trained_model.output[2])
+
+        #  Create a new wrapped model with named outputs
+        wrapped_model = Model(inputs=trained_model.input, 
+                              outputs={"base": unscaled_base, "suisun": unscaled_suisun, "contrast": unscaled_contrast})
+
+        wrapped_model.compile()
+        #  Debugging: Check model summary to ensure UnscaleLayer is last
+        wrapped_model.summary()
+        
+        return wrapped_model
+
+
+
 
 class StackLayer(layers.Layer):
     def __init__(self, **kwargs):
@@ -526,7 +568,7 @@ class GRUBuilder2(ModelBuilder):
     def fit_model(self, ann, fit_input, fit_output, test_input, test_output, init_train_rate, init_epochs, main_train_rate, main_epochs):
         """Custom fit_model that supports staged learning and multi-output cases."""
 
-        # ✅ Get loss function dynamically
+        #  Get loss function dynamically
         loss_function = self.get_loss_function()
 
         ann.compile(
@@ -545,7 +587,7 @@ class GRUBuilder2(ModelBuilder):
             shuffle=True
         )
 
-        # ✅ Main training phase (slower learning rate)
+        #  Main training phase (slower learning rate)
         if main_epochs is not None and main_epochs > 0:
             ann.compile(
                 optimizer=tf.keras.optimizers.Adamax(learning_rate=main_train_rate), 
@@ -631,20 +673,3 @@ class MLPBuilder1(ModelBuilder):
         return history, ann
 
 
-    def wrap_with_unscale_layer(self, trained_model):
-        """ Wraps a trained model that uses scaled outputs (normalized)
-            with an UnscaleLayer to convert outputs back to real-world values.
-            This is done here to ensure consistency of scaling       
-        """
-        from tensorflow.keras.models import Model
-        from casanntra.model_builder import UnscaleLayer  # Ensure this is available
-
-        output_scales = list(self.output_names.values())  # Retrieve output scale factors
-
-        # Add UnscaleLayer after the trained model's output
-        unscaled_output = UnscaleLayer(output_scales, name="unscaled_output")(trained_model.output)
-
-        # Create a new wrapped model
-        wrapped_model = Model(inputs=trained_model.input, outputs=unscaled_output)
-        
-        return wrapped_model
