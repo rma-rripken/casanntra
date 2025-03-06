@@ -10,6 +10,8 @@
 - **Case**: A distinct configuration of input conditions, typically representing a specific set of boundary conditions or forcing parameters in the simulation model. A given year may be represented by many cases each with a different perturbation. A case is the way we represent design of experiments (DOE).
 - **Cross-validation**: A strategy to maximize data utility by dividing cases into training and validation sets while ensuring temporal and case-based consistency. In cross-validation a `fold` is witheld.
 
+Further discussion of data inputs/outputs and sign conventions are discussed [here](data/readme.md)
+
 ## Cross-Validation
 Higher-dimensional models often have limited training data due to computational constraints. To effectively assess model generalization, **K-fold cross-validation** is applied, ensuring:
 - Cases remain intact across folds.

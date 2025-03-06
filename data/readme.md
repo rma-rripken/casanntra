@@ -10,8 +10,8 @@ These are the conventions as per CalSim ANN training.
 | scene            | Scenario being modeled - geographically (e.g. Baseline, Suisun Suite, Cache Suite)   |
 | case             | Case number being referenced which affects time-series inputs   |
 | northern_flow    | Sacramento (below Feather) + American + Yolo Bypass and Toe Drain + Mokelumne + Cosumnes + Calaveras - North Bay Aqueduct (cfs) |
-| sac_flow         | Sacramento River Inflow (below Feather) (cfs) |
-| sjr_flow         | San Joaquin River Inflow (cfs) |
+| sac_flow         | Sacramento River inflow at I St - includes American River upstream (cfs) |
+| sjr_flow         | San Joaquin River inflow at Vernalis (cfs) |
 | exports          | Banks + Jones + CCC Rock Slough + CCC Middle/Old + CCC Victoria (cfs)|
 | delta_cu         | Net Delta Consumptive Use (cfs) |
 | ndo              | Net Delta Outflow as calculated by boundary inflows (cfs) |
@@ -20,4 +20,7 @@ These are the conventions as per CalSim ANN training.
 | sf_tidal_energy  | Tidal energy of SFFPX station/boundary. Calculated over stage in feet. < (z- <z>)^2 >, where <> is a low-pass filter |
 | sf_tidal_filter  | Tidal energy of SFFPX station/boundary. Calculated over stage in feet. <z>, where <> is a low-pass filter |
 | x2               | X2 calculated from model EC results |
-| ec locations     | trp,wci,vcu,rsl,old,rri2,bdt,lps,snc,dsj,bdl,nsl2,vol,tss,sss,oh4,vcu,god,bac,hol,mtz,tms,gzl,rsl |
+| ec locations     | trp,wci,vcu,rsl,old,rri2,bdt,lps,snc,dsj,bdl,nsl2,vol,tss,sss,oh4,god,bac,hol,mtz,tms,gzl,rsl |
+
+
+Sign convention for flow is positive generally. For inflows it's positive when flowing **into** the domain, and for exports and consumptive use it's positive when flowing **out** of the domain.
