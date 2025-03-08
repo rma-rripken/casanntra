@@ -1,4 +1,8 @@
-,sf_tidal_filter,sf_tidal_energy,sf_tidal_range
+# SLR-detrended tidally filtered (cosine-Lanczos),tidal_energy and tidal range 
+# for NOAA San Francisco station. Data have been
+# detrended for sea level rise to correspond to 1998-05-01. 
+# Some filling performed using harmonic estimates
+datetime,sf_tidal_filter,sf_tidal_energy,sf_tidal_range
 1920-01-01T00:00,3.241,2.648,5.102
 1920-01-02T00:00,3.275,3.582,6.197
 1920-01-03T00:00,3.331,4.627,7.100
