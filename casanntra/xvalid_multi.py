@@ -26,6 +26,9 @@ def single_model_fit(
     ann = builder.build_model(input_layers, df_in)
     # todo: this was train_model
     print("Fitting model in single_model_fit")
+    print("Fit input keys:", fit_in.keys())
+    print("Model expected inputs:", ann.input.keys())
+    print("Should be the same")
     history, ann = builder.fit_model(
         ann,
         fit_in,
@@ -129,6 +132,11 @@ def bulk_fit(
     #                 out_prefix=output_prefix, init_train_rate=init_train_rate,
     #                 init_epochs=init_epochs main_train_rate=None, main_epochs=-1, pool_size=pool_size)
 
+def reorder(pkeys):
+    """Reorder the keys to match the order of the output_list"""
+    pkeys = sorted(pkeys, key=lambda x: (("target" not in x), ("source" not in x), x))
+    return pkeys
+
 
 def xvalid_fit_multi(
     df_in,
@@ -144,8 +152,8 @@ def xvalid_fit_multi(
     """Splits up the input by fold, withholding each fold in turn, building and training the model,
     and then evaluating the withheld data."""
 
-    num_outputs = builder.num_outputs()  # Get number of ANN outputs
-    output_list = builder.output_list()
+    num_outputs = builder.num_outputs()  # Get number of ANN output tensors
+    output_list = builder.output_list()  # Get the list of locations output in each tensor
 
     # df_in will not be a list at this point
     # todo: it could contain entries for which one df_out has no outputs
@@ -232,15 +240,28 @@ def xvalid_fit_multi(
             # history = pickle.loads(base64.b64decode(history_encoded))
             test_in = inputs_lagged.loc[inputs_lagged.fold == ifold, :]
             if isinstance(outputs_xvalid, list):
+                print("\nUpdating master xvalidation data structure (multiple output version)")
                 for i in range(num_outputs):
-                    print(
-                        "\nUpdating masxter xvalidation data structure (multiple output version)"
-                    )
-                    outputs_xvalid[i].loc[test_in.index, output_list] = test_pred[i]
+                    if isinstance(test_pred, dict):
+                        pkeys = list(test_pred.keys())
+                        if len(pkeys) != num_outputs:
+                            print(f"prediction output keys: {pkeys}")
+                            raise ValueError(f"num_outputs {num_outputs} does not match number of keys in test_pred {len(pkeys)}")
+                        pkeys = reorder(pkeys)  # Reorder keys without removing any
+                        try:
+                            tensor_key = pkeys[i]
+                            if "contrast" in tensor_key:
+                                continue
+                            outputs_xvalid[i].loc[test_in.index, output_list] = test_pred[tensor_key]
+                        except Exception as e:
+                            print("failure in tensor key")
+                            print(pkeys)
+                            print(tensor_key)
+                            raise e
+                    else:
+                        outputs_xvalid[i].loc[test_in.index, output_list] = test_pred[i]
             else:
-                print(
-                    "\nUpdating master xvalidation data structure (single output version)"
-                )
+                print("\nUpdating master xvalidation data structure (single output version)")
                 outputs_xvalid.loc[test_in.index, output_list] = test_pred
                 print("Done")
         except Exception as err:
@@ -252,7 +273,7 @@ def xvalid_fit_multi(
     print("Writing master xvalidation data structure to file")
     if isinstance(outputs_xvalid, list):
         print("Multiple structures")
-        for i in range(num_outputs):
+        for i in range(len(outputs_xvalid)):
             outxfile = f"{out_prefix}_xvalid_{i}.csv"
             outputs_xvalid[i][output_list] = outputs_xvalid[i][output_list].astype(
                 float

@@ -23,19 +23,21 @@ def initialize_builder(config_file, model_h5_path):
 
     return builder, config, model_name
 
-def convert_h5_to_tf(builder, model_h5_path, save_as_tf=True):
+def convert_h5_to_tf(builder, model_h5_path):
     """Converts an .h5 model to TensorFlow's SavedModel format with an UnscaleLayer."""
     
+    save_as_tf = True
     # ✅ Register required custom objects
     custom_objects = builder.custom_objects
-    custom_objects["UnscaleLayer"] = UnscaleLayer  # ✅ Explicitly register UnscaleLayer
+    #custom_objects["UnscaleLayer"] = UnscaleLayer  # ✅ Explicitly register UnscaleLayer
 
     # ✅ Load the original trained model
     print(custom_objects)
     model = load_model(model_h5_path, custom_objects=custom_objects)
+    print(model.summary())
 
     # ✅ Wrap model with UnscaleLayer **before saving**
-    wrapped_model = builder.wrap_with_unscale_layer(model)
+    wrapped_model = builder.wrap_with_unscale_layer2(model)
     wrapped_model.compile()
 
     # ✅ Verify that UnscaleLayer is present before saving
@@ -71,6 +73,7 @@ def process_and_predict(model, input_file, output_csv, builder, prediction_head=
     # ✅ Make predictions (returns a dictionary of named outputs)
     predictions = model.predict(df_in)
 
+
     # ✅ Handle dictionary outputs: Check if output is a dictionary or a list
     if isinstance(predictions, list):  
         print("⚠ WARNING: Predictions are a list, named outputs may not have persisted.")
@@ -86,6 +89,7 @@ def process_and_predict(model, input_file, output_csv, builder, prediction_head=
     print("🔍 Raw Model Output (Before Selecting Head):", predictions_dict)
 
     # ✅ Handle dictionary outputs: Ensure we retrieve the correct output tensor
+    print(prediction_head, predictions_dict)
     if prediction_head not in predictions_dict:
         raise ValueError(f"Invalid prediction head '{prediction_head}'. Choose from {list(predictions_dict.keys())}.")
         
@@ -100,7 +104,7 @@ def process_and_predict(model, input_file, output_csv, builder, prediction_head=
     print(f"✅ Predictions ({prediction_head}) saved at: {output_csv}")
 
 
-def convert_validate_model(config_file, model_h5_path, input_file):
+def convert_validate_model(config_file, model_h5_path, input_file,prediction_head):
     """Runs prediction for both the H5 model and TF model, producing output validation CSVs."""
 
     # ✅ Initialize builder once
@@ -111,19 +115,22 @@ def convert_validate_model(config_file, model_h5_path, input_file):
 
     # ✅ Load both models with registered custom objects
     custom_objects = builder.custom_objects  # ✅ Use the builder's registered objects
-    custom_objects['UnscaleLayer'] = UnscaleLayer
+    #custom_objects['UnscaleLayer'] = UnscaleLayer
     h5_model = load_model(model_h5_path, custom_objects=custom_objects)
     h5_model.load_weights(model_h5_path.replace(".h5",".weights.h5"))
+    print(h5_model.summary())
+
      #  Wrap the `.h5` model with `UnscaleLayer`
-    h5_model = builder.wrap_with_unscale_layer(h5_model)   
+    #h5_model = builder.wrap_with_unscale_layer2(h5_model)   
+    h5_model = builder.wrap_with_unscale_layer2(h5_model)   
     tf_model = load_model(tf_model_path, custom_objects=custom_objects)
 
     # ✅ Predict with both and save outputs
     h5_output_csv = model_h5_path.replace(".h5", "_h5inputcheck.csv")
     tf_output_csv = h5_output_csv.replace("h5input","tfinput")
     
-    process_and_predict(h5_model, input_file, h5_output_csv, builder)
-    process_and_predict(tf_model, input_file, tf_output_csv, builder)
+    process_and_predict(h5_model, input_file, h5_output_csv, builder,prediction_head)
+    process_and_predict(tf_model, input_file, tf_output_csv, builder,prediction_head)
 
 
 if __name__ == "__main__":
@@ -133,8 +140,8 @@ if __name__ == "__main__":
     parser.add_argument("config", type=str, help="Path to the YAML training config file.")
     parser.add_argument("model_h5", type=str, help="Path to the trained H5 model.")
     parser.add_argument("input_file", type=str, help="Path to an input file for model validation.")
-
+    parser.add_argument("pred_head", type=str, help="Prediction output tensor for model validation.")
     args = parser.parse_args()
 
     # ✅ Run conversion and validation
-    convert_validate_model(args.config, args.model_h5, args.input_file)
+    convert_validate_model(args.config, args.model_h5, args.input_file,prediction_head=args.pred_head)

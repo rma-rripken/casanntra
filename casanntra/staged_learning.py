@@ -170,10 +170,10 @@ def fit_from_config(
             df_out[1]["fold"] = df_out[1]["fold"] % pool_size
 
     # ✅ Scale outputs. Works for single df or list
-    df_out = scale_output(df_out, builder.output_names)
+    #df_out = scale_output(df_out, builder.output_names)
 
     # ✅ Write scaled reference outputs, works for single dataframe or list
-    write_reference_outputs(output_prefix, df_out, builder, is_scaled=True)
+    #write_reference_outputs(output_prefix, df_out, builder, is_scaled=True)
 
     # Perform cross-validation fitting (safe within multiprocessing)
     xvalid_fit_multi(

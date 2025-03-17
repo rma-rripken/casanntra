@@ -1,73 +1,14 @@
 from keras.models import load_model
 from tensorflow.keras import layers, regularizers, Model
+from tensorflow.keras.layers import Reshape, Concatenate
 import tensorflow as tf
 import pandas as pd
-from casanntra.model_builder import GRUBuilder2, StackLayer
+from casanntra.model_builder import *
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.layers import Layer
 
 
-##@tf.keras.utils.register_keras_serializable
-def masked_mae(y_true, y_pred):
-    # Mask NaN values, replace by 0
-    y_true = tf.where(tf.math.is_nan(y_true), y_pred, y_true)
-
-    # Calculate absolute differences
-    absolute_differences = tf.abs(y_true - y_pred)
-
-    # Compute the mean, ignoring potential NaN values (if any remain after replacement)
-    mae = tf.reduce_mean(absolute_differences)
-
-    return mae
-
-
-# @tf.keras.utils.register_keras_serializable
-def masked_mse(y_true, y_pred):
-    # Mask NaN values, replace by 0
-    y_true = tf.where(tf.math.is_nan(y_true), y_pred, y_true)
-
-    # Calculate absolute differences
-    absolute_differences = tf.square(y_true - y_pred)
-
-    # Compute the mean, ignoring potential NaN values (if any remain after replacement)
-    mae = tf.reduce_mean(absolute_differences)
-
-    return mae
-
-
-def masked_mae1(y_true, y_pred):
-    """Computes MAE while ignoring NaN values and ensuring NaN-safe computation."""
-    mask = tf.math.logical_not(tf.math.is_nan(y_true)) & tf.math.logical_not(
-        tf.math.is_nan(y_pred)
-    )
-    valid_values = tf.boolean_mask(y_true - y_pred, mask)
-
-    # ✅ If there are no valid values, return 0.0 instead of NaN
-    return tf.cond(
-        tf.size(valid_values) > 0,
-        lambda: tf.reduce_mean(tf.abs(valid_values)),
-        lambda: tf.constant(
-            0.0, dtype=tf.float32
-        ),  # ✅ Return 0 loss if no valid values
-    )
-
-
-def masked_mse2(y_true, y_pred):
-    """Computes MAE while ignoring NaN values and ensuring NaN-safe computation."""
-    mask = tf.math.logical_not(tf.math.is_nan(y_true)) & tf.math.logical_not(
-        tf.math.is_nan(y_pred)
-    )
-    valid_values = tf.boolean_mask(y_true - y_pred, mask)
-
-    # ✅ If there are no valid values, return 0.0 instead of NaN
-    return tf.cond(
-        tf.size(valid_values) > 0,
-        lambda: tf.reduce_mean(tf.square(valid_values)),
-        lambda: tf.constant(
-            1e-7, dtype=tf.float32
-        ),  # ✅ Avoid zero loss, ensure gradients exist
-    )
 
 
 # multi_stage_model_builder.py
@@ -76,10 +17,11 @@ class MultiStageModelBuilder(GRUBuilder2):
     def __init__(self, input_names, output_names, ndays=90):
         """Multi-stage model builder that supports flexible transfer learning options."""
         super().__init__(input_names, output_names, ndays)
-
+        output_scales = list(self.output_names.values())
         # ✅ Register additional loss functions required for staged training
-        self.register_custom_object("masked_mae", masked_mae)
-        self.register_custom_object("masked_mse", masked_mse)
+
+
+
 
     def set_builder_args(self, builder_args):
         """Allows builder_args to be updated dynamically between steps."""
@@ -97,28 +39,42 @@ class MultiStageModelBuilder(GRUBuilder2):
 
     def num_outputs(self):
         """Multi-output model: primary output + secondary ANN output"""
-        nout = 2 if self.transfer_type in ["contrastive", "difference"] else 1
+        nout = 3 if self.transfer_type in ["contrastive", "difference"] else 1
         return nout
 
-    def build_model(self, input_layers, input_data, add_unscaled_output=False):
+    def build_model(self, input_layers, input_data):
         """Builds the ANN model with explicit loss functions and metric tracking."""
 
         base_model = self.load_existing_model()
 
-        if base_model:
-            input_layer = base_model.input
+
+        if base_model:            
+            # Load the base model and rename its dense output layer
+            if isinstance(base_model.input, list):
+                input_layer = {layer.name: layer for layer in base_model.input}  # ✅ Dictionary for multi-input models
+            else:
+                input_layer = base_model.input  # ✅ Single tensor for single-input models
             feature_extractor = base_model.get_layer("gru_2").output
-            self.old_dense_layer = base_model.get_layer(
-                "out_absolute"
-            )  # Ensure correct layer name
-            self.old_weights = self.old_dense_layer.get_weights()
+            try:
+                self.old_dense_layer = base_model.get_layer("out_scaled")
+                self.old_weights = self.old_dense_layer.get_weights()
+            except ValueError:
+                self.old_dense_layer = None
+                self.old_weights = None
+                raise
         else:
+            self.old_dense_layer = None
+            self.old_weights = None
             prepro_layers = self.prepro_layers(input_layers, input_data)
-            x = StackLayer(name="stack_layer")(prepro_layers)
-            x = layers.GRU(
+            expanded_inputs = [Reshape((self.ndays, 1))(tensor) for tensor in prepro_layers]
+
+            # Concatenate along the last axis to get shape (batch_size, ntime, nfeature)
+            x = Concatenate(axis=-1,name="stacked")(expanded_inputs)
+
+            x = layers.LSTM(
                 units=32, return_sequences=True, activation="sigmoid", name="gru_1"
             )(x)
-            feature_extractor = layers.GRU(
+            feature_extractor = layers.LSTM(
                 units=16, return_sequences=False, activation="sigmoid", name="gru_2"
             )(x)
             input_layer = input_layers
@@ -127,45 +83,54 @@ class MultiStageModelBuilder(GRUBuilder2):
 
         # ✅ Contrastive Learning Model
         if self.transfer_type == "contrastive":
-
-            # ✅ Define explicit `y_true` placeholders for training only
-            y_true_target = layers.Input(
-                shape=(len(self.output_names),), name="y_true_target"
-            )
-            y_true_source = layers.Input(
-                shape=(len(self.output_names),), name="y_true_source"
-            )
-
-            # ✅ Prevent Keras from computing gradients for these inputs
-            y_true_target = tf.stop_gradient(y_true_target)
-            y_true_source = tf.stop_gradient(y_true_source)
-
+            # Explicitly define scaled output layers first (clearly distinct layer names)
             out_target_layer = layers.Dense(
-                units=len(self.output_names), name="out_target", activation="elu"
-            )
+              units=len(self.output_names), activation="elu", name="target_scaled"
+                )
             out_source_layer = layers.Dense(
-                units=len(self.output_names), name="out_source", activation="elu"
-            )
-            out_source = out_source_layer(feature_extractor)
-            out_target = out_target_layer(feature_extractor)
+                 units=len(self.output_names), name="source_scaled", activation="elu"
+             )
+
+            # Apply these layers explicitly to the feature extractor
+            out_target_scaled = out_target_layer(feature_extractor)
+            out_source_scaled = out_source_layer(feature_extractor)
             out_source_layer.set_weights(self.old_weights)
             out_target_layer.set_weights(self.old_weights)
             out_target_layer.trainable = True  # todo investigate further
 
-            out_contrast = layers.Subtract(name="out_contrast")(
-                [out_target, out_source]
+
+            # Explicitly apply unscaling immediately after reusing layers
+            output_scales = list(self.output_names.values())
+            out_target_unscaled = UnscaleLayer(output_scales, name="out_target_unscaled")(out_target_scaled)
+            out_source_unscaled = UnscaleLayer(output_scales, name="out_source_unscaled")(out_source_scaled)
+            out_contrast_unscaled = layers.Subtract(name="out_contrast_unscaled")(
+                [out_target_unscaled, out_source_unscaled]
             )
+
+            # Explicit minimal correction in model outputs (CRITICAL FIX)
             ann = Model(
-                inputs=input_layer, outputs=[out_target, out_source, out_contrast]
+                inputs=input_layer, 
+                outputs={
+                    "out_target_unscaled": out_target_unscaled,
+                    "out_source_unscaled": out_source_unscaled,
+                    "out_contrast_unscaled": out_contrast_unscaled
+                }
             )
             return ann
 
         # ✅ Default Direct Mode
         else:
-            out_absolute = layers.Dense(
-                units=len(self.output_names), name="out_absolute", activation="elu"
-            )(feature_extractor)
-            model = Model(inputs=input_layer, outputs=out_absolute)
+            # Dense outputs in scaled units first
+            scaled_output = layers.Dense(len(self.output_names), activation="elu", name="out_scaled")(feature_extractor)
+
+            # explicitly add unscaling directly in base model
+            # self.output_names.values() are the scaling factors
+            unscaled_output = UnscaleLayer(list(self.output_names.values()), name="out_unscaled")(scaled_output)
+
+            model = Model(inputs=input_layer, 
+                          outputs={"out_unscaled": unscaled_output})
+
+            # todo this needs to get moved to model builder or it likely will not work with fitting
             return model
 
     def requires_secondary_data(self):
@@ -290,25 +255,25 @@ class MultiStageModelBuilder(GRUBuilder2):
         """Handles model training in two stages: initial training and fine-tuning."""
 
         contrastive_target = fit_output[0] - fit_output[1]  # Precomputed contrast
-        contrast_weight = 0.50
+        contrast_weight = 1.
 
         # ✅ Mask NaNs properly
         contrastive_target[np.isnan(fit_output[0]) | np.isnan(fit_output[1])] = np.nan
 
         train_y = {
-            "out_target": fit_output[0],
-            "out_source": fit_output[1],
-            "out_contrast": contrastive_target,  # ✅ Treated just like a regular target
+            "out_target_unscaled": fit_output[0],
+            "out_source_unscaled": fit_output[1],
+            "out_contrast_unscaled": contrastive_target,  # ✅ Treated just like a regular target
         }
 
         contrastive_test = test_output[0] - test_output[1]  # Precomputed contrast
         # ✅ Validation labels
         test_y = {
-            "out_target": test_output[0],
-            "out_source": test_output[1],
-            "out_contrast": test_output[0] - test_output[1],
+            "out_target_unscaled": test_output[0],
+            "out_source_unscaled": test_output[1],
+            "out_contrast_unscaled": test_output[0] - test_output[1],
         }
-        test_y["out_contrast"][
+        test_y["out_contrast_unscaled"][
             np.isnan(test_output[0]) | np.isnan(test_output[1])
         ] = np.nan  # ✅ Mask NaNs
 
@@ -317,31 +282,37 @@ class MultiStageModelBuilder(GRUBuilder2):
             if layer.name in ["gru_1", "gru_2"]:
                 layer.trainable = False
 
-        # todo: this is unique to contrastive
+        output_scales = list(self.output_names.values())
+
         ann.compile(
             optimizer=tf.keras.optimizers.Adamax(
                 learning_rate=init_train_rate, clipnorm=0.5
             ),
-            run_eagerly=False,  # No need for eager execution
+            run_eagerly=False,  # No change needed here
             loss={
-                "out_target": masked_mae,
-                "out_source": masked_mae,
-                "out_contrast": masked_mae,
-            },
-            loss_weights={  # ✅ Assign loss weights to emulate λ effect
-                "out_target": 1.0,
-                "out_source": 1.0,
-                "out_contrast": contrast_weight,  # ✅ Contrastive loss weight
-            },
+                    "out_target_unscaled":  ScaledMaskedMAE(output_scales),
+                    "out_source_unscaled":  ScaledMaskedMAE(output_scales),
+                    "out_contrast_unscaled": ScaledMaskedMAE(output_scales),
+                    },
+            loss_weights={
+                    "out_target_unscaled": 1.0,
+                    "out_source_unscaled": 1.0,
+                    "out_contrast_unscaled": contrast_weight,
+                    },
             metrics={
-                "out_target": [masked_mae, masked_mse],
-                "out_source": [masked_mae, masked_mse],
-                "out_contrast": [masked_mae, masked_mse],
-            },
+                    "out_target_unscaled":  [ScaledMaskedMAE(output_scales), ScaledMaskedMSE(output_scales)],
+                    "out_source_unscaled":  [ScaledMaskedMAE(output_scales), ScaledMaskedMSE(output_scales)],
+                    "out_contrast_unscaled": [masked_mae, masked_mse],
+                     },
         )
 
         # ✅ Initial Training Phase (larger learning rate)
         print("=== DEBUG: Initial Training Phase ===")
+
+        print("Expected model outputs:", ann.output_names)
+        print("Provided train_y keys:", train_y.keys())
+        assert set(ann.output_names) == set(train_y.keys()), "Mismatch between model outputs and training labels!"
+
         history = ann.fit(
             fit_input,
             train_y,  # ⬅️ Only the actual feature input is used
@@ -364,26 +335,26 @@ class MultiStageModelBuilder(GRUBuilder2):
                     layer.trainable = True
             print(" Feature layers (gru_1, gru_2) are UNFROZEN for main training.")
             print("=== DEBUG: Main Training Phase ===")
-
+            output_scales = list(self.output_names.values())
             ann.compile(
                 optimizer=tf.keras.optimizers.Adamax(
-                    learning_rate=init_train_rate, clipnorm=0.5
+                learning_rate=main_train_rate, clipnorm=0.5
                 ),
-                run_eagerly=False,  # No need for eager execution
+                run_eagerly=False,
                 loss={
-                    "out_target": masked_mae,
-                    "out_source": masked_mae,
-                    "out_contrast": masked_mae,
+                    "out_target_unscaled":  ScaledMaskedMAE(output_scales),
+                    "out_source_unscaled":  ScaledMaskedMAE(output_scales),
+                    "out_contrast_unscaled": ScaledMaskedMAE(output_scales),
                 },
-                loss_weights={  # ✅ Assign loss weights to emulate λ effect
-                    "out_target": 1.0,
-                    "out_source": 1.0,
-                    "out_contrast": contrast_weight,  # ✅ Contrastive loss weight
+                loss_weights={
+                    "out_target_unscaled": 1.0,
+                    "out_source_unscaled": 1.0,
+                    "out_contrast_unscaled": contrast_weight,
                 },
                 metrics={
-                    "out_target": [masked_mae, masked_mse],
-                    "out_source": [masked_mae, masked_mse],
-                    "out_contrast": [masked_mae, masked_mse],
+                    "out_target_unscaled":  [ScaledMaskedMAE(output_scales), ScaledMaskedMSE(output_scales)],
+                    "out_source_unscaled":  [ScaledMaskedMAE(output_scales), ScaledMaskedMSE(output_scales)],
+                    "out_contrast_unscaled": [masked_mae, masked_mse],
                 },
             )
 
@@ -416,7 +387,6 @@ class MultiStageModelBuilder(GRUBuilder2):
 
         print("direct or base training")
         loss_function = "mae"
-        metrics = ["mae", "mse"]
         output_names = [
             "output"
         ]  # [list(self.output_names.keys())[0]]  # Single-output model
@@ -424,19 +394,21 @@ class MultiStageModelBuilder(GRUBuilder2):
         # ✅ Compile Model (Normal losses for main outputs, `add_loss()` handles contrast)
         loss_dict = {name: loss_function for name in output_names}
 
-        # todo: make this configurable
-        # for layer in ann.layers:
-        #    if layer.name in ["gru_1", "gru_2"]:
-        #        layer.trainable = False
+        output_scales = list(self.output_names.values())
 
-        train_model.compile(
+        ann.compile(
             optimizer=tf.keras.optimizers.Adamax(
                 learning_rate=init_train_rate, clipnorm=0.5
             ),
-            loss=loss_function,
-            metrics=metrics,
-            run_eagerly=False,
-        )
+            loss={"out_unscaled": ScaledMaskedMAE(output_scales)},
+            metrics={
+                "out_unscaled": [
+                    ScaledMaskedMAE(output_scales),
+                    ScaledMaskedMSE(output_scales)
+                ]
+            },
+                run_eagerly=False,
+            )
 
         print("=== DEBUG: Initial Training Phase ===")
         # ✅ Initial Training Phase
@@ -454,10 +426,17 @@ class MultiStageModelBuilder(GRUBuilder2):
         # Main Training Phase (Slower Learning Rate)
         if main_epochs and main_epochs > 0:
 
-            train_model.compile(
-                optimizer=tf.keras.optimizers.Adamax(learning_rate=main_train_rate),
-                loss=loss_function,
-                metrics=metrics,
+            ann.compile(
+                optimizer=tf.keras.optimizers.Adamax(
+                    learning_rate=main_train_rate, clipnorm=0.5
+                ),
+                loss={"out_unscaled": ScaledMaskedMAE(output_scales)},
+                metrics={
+                    "out_unscaled": [
+                        ScaledMaskedMAE(output_scales),
+                        ScaledMaskedMSE(output_scales)
+                    ]
+                },
                 run_eagerly=False,
             )
             history = train_model.fit(

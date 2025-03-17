@@ -1,12 +1,12 @@
 import pandas as pd
 from casanntra.read_data import read_data
-from casanntra.scaling import ModifiedExponentialDecayLayer,TunableModifiedExponentialDecayLayer
+from casanntra.scaling import ModifiedExponentialDecayLayer
 from keras.models import load_model
 import numpy as np
 import tensorflow as tf
 import tensorflow.keras.layers as layers
 
-from tensorflow.keras.layers import Dense, Input, Layer
+from tensorflow.keras.layers import Dense, Input, Layer, Multiply, Lambda
 from tensorflow.keras.layers.experimental.preprocessing import Normalization, IntegerLookup, Rescaling #CategoryEncoding
 from tensorflow.keras import regularizers
 from tensorflow.keras.losses import MeanSquaredLogarithmicError
@@ -17,36 +17,125 @@ import os
 
 import tensorflow as tf
 from tensorflow.keras.layers import Layer
+ 
+
+
+
+
+
+class ScaledMaskedMAE(tf.keras.losses.Loss):
+    """Pickle-safe, TensorFlow-serializable custom loss function for scaled MAE."""
+
+    def __init__(self, output_scales, name="scaled_mae"):
+        super().__init__(name=name)
+        self.scales_tensor = tf.constant(output_scales, dtype=tf.float32)
+
+    def call(self, y_true, y_pred):
+        y_true_scaled = y_true / self.scales_tensor
+        y_pred_scaled = y_pred / self.scales_tensor
+
+        # ✅ Replace NaNs in `y_true` with corresponding predictions
+        y_true_scaled = tf.where(tf.math.is_nan(y_true_scaled), y_pred_scaled, y_true_scaled)
+
+        absolute_differences = tf.abs(y_true_scaled - y_pred_scaled)
+
+        return tf.reduce_mean(absolute_differences)
+    
+    def get_config(self):
+        """Ensures Keras can serialize this loss with its name."""
+        config = super().get_config()
+        config.update({"output_scales": self.scales_tensor.numpy().tolist()})
+        return config
+
+class ScaledMaskedMSE(tf.keras.losses.Loss):
+    """Pickle-safe, TensorFlow-serializable custom loss function for scaled MSE."""
+
+    def __init__(self, output_scales, name="scaled_mse"):
+        super().__init__(name=name)
+        self.scales_tensor = tf.constant(output_scales, dtype=tf.float32)
+
+    def call(self, y_true, y_pred):
+        y_true_scaled = y_true / self.scales_tensor
+        y_pred_scaled = y_pred / self.scales_tensor
+
+        # ✅ Replace NaNs in `y_true` with corresponding predictions
+        y_true_scaled = tf.where(tf.math.is_nan(y_true_scaled), y_pred_scaled, y_true_scaled)
+
+        squared_diff = tf.square(y_true_scaled - y_pred_scaled)
+
+        return tf.reduce_mean(squared_diff)
+
+    def get_config(self):
+        """Ensures Keras can serialize this loss with its name."""
+        config = super().get_config()
+        config.update({"output_scales": self.scales_tensor.numpy().tolist()})
+        return config
+
+
+def scaled_masked_mse(output_scales):
+    scales = tf.constant(output_scales, dtype=tf.float32)
+
+    def loss(y_true, y_pred):
+        y_true_scaled = y_true / scales
+        y_pred_scaled = y_pred / scales
+
+        mask = ~tf.math.is_nan(y_true_scaled)
+        diff = tf.boolean_mask(y_true_scaled - y_pred_scaled, mask)
+        squared_diff = tf.square(diff)
+
+        return tf.reduce_mean(squared_diff)
+
+
+##@tf.keras.utils.register_keras_serializable
+def masked_mae(y_true, y_pred):
+    # Mask NaN values, replace by 0
+    y_true = tf.where(tf.math.is_nan(y_true), y_pred, y_true)
+
+    # Calculate absolute differences
+    absolute_differences = tf.abs(y_true - y_pred)
+
+    # Compute the mean, ignoring potential NaN values (if any remain after replacement)
+    mae = tf.reduce_mean(absolute_differences)
+
+    return mae
+
+
+# @tf.keras.utils.register_keras_serializable
+def masked_mse(y_true, y_pred):
+    # Mask NaN values, replace by 0
+    y_true = tf.where(tf.math.is_nan(y_true), y_pred, y_true)
+
+    # Calculate absolute differences
+    absolute_differences = tf.square(y_true - y_pred)
+
+    # Compute the mean, ignoring potential NaN values (if any remain after replacement)
+    mae = tf.reduce_mean(absolute_differences)
+
+    return mae
+
+
+
 
 class UnscaleLayer(Layer):
     def __init__(self, output_scales, **kwargs):
-        """
-        A layer that rescales a single model output tensor to its original units.
+        super().__init__(**kwargs)
+        self.output_scales_init = output_scales
 
-        Parameters:
-        - output_scales: A list or array of scaling factors for each feature (should match `nfeature`).
-        """
-        super(UnscaleLayer, self).__init__(**kwargs)
-        self.output_scales = tf.constant(output_scales, dtype=tf.float32)  #  Shape: (nfeature,)
+    def build(self, input_shape):
+        self.output_scales = self.add_weight(
+            name="output_scales",
+            shape=(1, len(self.output_scales_init)),
+            initializer=tf.constant_initializer(self.output_scales_init),
+            trainable=False,
+        )
 
     def call(self, inputs):
-        """
-        Apply the unscale transformation to the input tensor.
-
-        Expected input: A single tensor of shape `(nbatch, nfeature)`.
-        """
-        output = tf.multiply(inputs, self.output_scales)  #  Ensure element-wise multiplication
-
-        return output
+        return inputs * self.output_scales
 
     def get_config(self):
-        """
-        Returns the configuration for serialization.
-        """
         config = super().get_config()
-        config.update({"output_scales": self.output_scales.numpy().tolist()})
+        config.update({"output_scales": self.output_scales_init})
         return config
-
 
 
 
@@ -63,17 +152,30 @@ class ModelBuilder(object):
         self.ndays = ndays
         self.load_model_fname = None  # Used for transfer learning
         self.builder_args = {}        # Used for per-step configuration See process_config
-
+        self.ann_output_name = 'output_scaled'  # default for single output
+        self.ann_output_name_map = None  # default for multiple outputs
+        output_scales = list(self.output_names.values())
         #  Centralized custom object registration
         self.custom_objects = {"UnscaleLayer": UnscaleLayer,
                                "StackLayer": StackLayer,
-                               "ModifiedExponentialDecayLayer": ModifiedExponentialDecayLayer}
-
+                               "ModifiedExponentialDecayLayer": ModifiedExponentialDecayLayer,
+                               "masked_mae": masked_mae,
+                               "masked_mse": masked_mse,
+                               "scaled_masked_mae": ScaledMaskedMAE(output_scales),
+                               "scaled_masked_mse": ScaledMaskedMSE(output_scales)}
         
 
     def set_builder_args(self, builder_args):
         """Allows builder_args to be updated dynamically between steps. No default implementation"""
         self.builder_args = builder_args
+        self.transfer_type = builder_args.get("transfer_type", None)
+
+        # Handle output names dynamically
+        if 'ann_output_name' in builder_args:
+            self.ann_output_name = builder_args['ann_output_name']
+        
+        if 'ann_output_name_map' in builder_args:
+            self.ann_output_name_map = builder_args['ann_output_name_map']        
 
     def num_outputs(self):
         """Returns the number of ANN output tensors produced if it is a list of tensors. 
@@ -97,9 +199,10 @@ class ModelBuilder(object):
             return None  # No model to load
         
         print(f"Loading model from {self.load_model_fname} with registered custom objects.")
+
+        #print(f"Custom objects: {self.custom_objects}")
         base_model = load_model(self.load_model_fname+".h5", custom_objects=self.custom_objects)
         base_model.load_weights(self.load_model_fname+".weights.h5")
-
         return base_model
 
 
@@ -207,16 +310,19 @@ class ModelBuilder(object):
         thresh = 40000.
         dims = {x: self.feature_dim(x) for x in names} 
 
-        for fndx, feature in enumerate(self.feature_names()):
+        for feature in self.feature_names():
             station_df = df.loc[:,feature]
-            xinput = inp_layers[fndx]
+            xinput = inp_layers[feature]
             prepro_name=f"{feature}_prepro" 
-            if feature in ["dcc", "smscg"] and False:
-                feature_layer = Normalization(axis=None,name=prepro_name)  # Rescaling(1.0)
+            if feature in ["dcc", "smscg"]:
+                feature_layer = Rescaling(1.0,name=prepro_name)
             elif feature in [ "northern_flow", "sac_flow", "ndo"] and thresh is not None:
-                feature_layer = Rescaling(1 / thresh, name=prepro_name)  # Normalization(axis=None)
+                # Define the model. Use the test_scaling file to refine parameters
+                feature_layer = ModifiedExponentialDecayLayer(a=1.e-5, b=70000., name=prepro_name)
+                #feature_layer = Rescaling(1 / thresh, name=prepro_name)  # Normalization(axis=None)
             elif feature == "sjr_flow" and thresh is not None:
-                feature_layer = Rescaling(0.25 / thresh, name=prepro_name)  # Normalization(axis=None)                
+                feature_layer = ModifiedExponentialDecayLayer(a=1.e-5, b=40000., name=prepro_name)
+                # feature_layer = Rescaling(0.25 / thresh, name=prepro_name)  # Normalization(axis=None)         
             else:
                 feature_layer = Normalization(axis=None,name=prepro_name)
                 feature_layer.adapt(
@@ -232,12 +338,12 @@ class ModelBuilder(object):
         the first ANN computational layer. The example implementation shows some ways to do it.
         This would likely be overridden for different choices, though it works for many
         """
-        layers = []
+        layers = {}
         names = self.feature_names()  
 
-        for fndx, feature in enumerate(self.feature_names()):
-            xinput = Input(shape=(self.feature_dim(feature)),name=feature)
-            layers.append(xinput)
+        for feature in self.feature_names():
+            layers[feature] = Input(shape=(self.feature_dim(feature)), name=feature)
+
         
         return layers
     
@@ -433,27 +539,26 @@ class ModelBuilder(object):
         df_x = df2.join(df_x, how="right")
         return df_x
 
-    def wrap_with_unscale_layer(self, trained_model):
-        """Wraps a trained model with individual UnscaleLayer instances for each output tensor."""
-        
-        output_scales = list(self.output_names.values())  #  Should be of shape (nfeature,)
-        output_names = ["base", "suisun", "contrast"]  # Default names, can be made configurable
 
-        #  Separate UnscaleLayer instances for each output tensor
-        unscaled_base = UnscaleLayer(output_scales, name="unscale_base")(trained_model.output[0])
-        unscaled_suisun = UnscaleLayer(output_scales, name="unscale_suisun")(trained_model.output[1])
-        unscaled_contrast = UnscaleLayer(output_scales, name="unscale_contrast")(trained_model.output[2])
 
-        #  Create a new wrapped model with named outputs
-        wrapped_model = Model(inputs=trained_model.input, 
-                              outputs={"base": unscaled_base, "suisun": unscaled_suisun, "contrast": unscaled_contrast})
+    def wrap_with_unscale_layer2(self, trained_model):
+        output_scales = list(self.output_names.values())
 
-        wrapped_model.compile()
-        #  Debugging: Check model summary to ensure UnscaleLayer is last
-        wrapped_model.summary()
+        if isinstance(trained_model.output, dict):
+            output_dict = trained_model.output
+        elif isinstance(trained_model.output, list):
+            output_dict = {tensor.name.split('/')[0]: tensor for tensor in trained_model.output}
+        else:
+            output_dict = {"output_scaled": trained_model.output}
+
+        unscaled_outputs = {}
+        for key, tensor in output_dict.items():
+            safe_key = key.replace("/", "_") + "_unscaled"
+            unscaled_outputs[safe_key] = UnscaleLayer(output_scales, name=safe_key)(tensor)
+
+        wrapped_model = Model(inputs=trained_model.input, outputs=unscaled_outputs)
         
         return wrapped_model
-
 
 
 
@@ -484,49 +589,8 @@ class GRUBuilder2(ModelBuilder):
         self.reverse_time_inputs = False    # Reorder days looking backward. 
                                             # False for recursive, True (by convention) for 
         self.register_custom_object("ModifiedExponentialDecayLayer", ModifiedExponentialDecayLayer)
-        self.register_custom_object("TunableModifiedExponentialDecayLayer", TunableModifiedExponentialDecayLayer)
+    
         
-        
-    def prepro_layers(self, inp_layers, df):
-        """ Create the preprocessing layers, one per location, which will be concatenated later.
-            This function performs any sort of special scaling. Here the superclass is overridden.
-            See the base class comments in bodel_builder.py for discussion. 
-        """
-        if df is None:
-            raise ValueError("Invalid (None) data frame.")
-        
-        layers = []
-        names = self.feature_names()
-        if len(names) != len(inp_layers ): 
-            raise ValueError("Inconsistency in number of layers between inp_layers and feature names")
-        thresh = 40000.
-        dims = {x: self.feature_dim(x) for x in names} 
-
-        for fndx, feature in enumerate(self.feature_names()):
-            if not feature in df.columns: 
-                raise ValueError(f"Feature not found in dataframe: {feature}")
-            station_df = df.loc[:,feature]
-            xinput = inp_layers[fndx]
-            prepro_name=f"{feature}_prepro" 
-            if feature in ["dcc", "smscg"] and False:
-                feature_layer = Normalization(axis=None,name=prepro_name)  # Rescaling(1.0)
-            elif feature in [ "northern_flow", "sac_flow", "ndo"] and thresh is not None:
-                # Define the model. Use the test_scaling file to refine parameters
-                feature_layer = ModifiedExponentialDecayLayer(a=1.e-5, b=70000., name=prepro_name)
-                #feature_layer = Rescaling(1 / thresh, name=prepro_name)  # Normalization(axis=None)
-            elif feature == "sjr_flow" and thresh is not None:
-                feature_layer = ModifiedExponentialDecayLayer(a=1.e-5, b=40000., name=prepro_name)
-                #feature_layer = Rescaling(0.25 / thresh, name=prepro_name)  # Normalization(axis=None)
-            elif feature == "exports":
-                feature_layer = Rescaling(0.0001, name=prepro_name)
-            elif feature == "delta_cu":
-                freature_layer = Rescaling(1/3000.,name=prepro_name)                
-            else:
-                feature_layer = Normalization(axis=None,name=prepro_name)
-                feature_layer.adapt(
-                    station_df.to_numpy())
-            layers.append(feature_layer(xinput))
-        return layers
 
 
     def build_model(self,input_layers, input_data):
@@ -544,18 +608,25 @@ class GRUBuilder2(ModelBuilder):
         else:
             print(f"Creating from scratch")
             prepro_layers = self.prepro_layers(input_layers,input_data)          
-            x = StackLayer(name="stack_layer")(prepro_layers)
-            x = layers.GRU(units=32, return_sequences=True, 
+            #x = StackLayer(name="stack_layer")(prepro_layers)
+            x = Lambda(lambda inputs: tf.stack(inputs, axis=-1), name="StackLambda")(input_layers)
+            x = tf.keras.layers.concatenate(prepro_layers)
+            x = layers.LSTM(units=32, return_sequences=True, 
                                 activation='sigmoid',name='gru_1')(x)
-            x = layers.GRU(units=16, return_sequences=False, 
+            x = layers.LSTM(units=16, return_sequences=False, 
                                 activation='sigmoid',name='gru_2')(x)
             x = layers.Flatten()(x)
             
             outdim = len(self.output_names)
             # The regularization is unknown
-            outputs = layers.Dense(units=outdim, name = "ec", activation='elu',
+            scaled_output = layers.Dense(units=outdim, name = "out_scaled", activation='elu',
                                 kernel_regularizer = regularizers.l1_l2(l1=0.0001,l2=0.0001))(x)
-            ann = Model(inputs = input_layers, outputs = outputs)
+
+            # explicitly add unscaling directly in base model
+            unscaled_output = UnscaleLayer(list(self.output_names.values()), name="out_unscaled")(scaled_output)
+
+            ann = Model(inputs=input_layers, outputs=unscaled_output)
+
             print(ann.summary())
 
         return ann
