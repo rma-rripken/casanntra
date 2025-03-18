@@ -22,20 +22,28 @@ class MultiStageModelBuilder(GRUBuilder2):
 
 
 
-
     def set_builder_args(self, builder_args):
         """Allows builder_args to be updated dynamically between steps."""
         self.builder_args = builder_args
-        ttype = builder_args.get("transfer_type", None)
-        if ttype is None or ttype == "None":
-            ttype = "direct"  # todo None conversion is done centrally for top level keys in yml, should do it at other depths
-        self.transfer_type = ttype
+        self.transfer_type = builder_args.get("transfer_type", "direct")
+
+        # ✅ Only load contrast_weight if contrastive mode is selected
+        if self.transfer_type == "contrastive":
+            self.contrast_weight = float(builder_args.get("contrast_weight", 1.0))
+        else:
+            self.contrast_weight = None  #  Prevents accidental use in non-contrastive cases
+
+        if self.transfer_type not in ["direct", "difference", "contrastive"]:
+            raise ValueError(f"Invalid transfer type: {self.transfer_type}")
+        
         if self.transfer_type is not None:
             transfer_opts = ["direct", "difference", "contrastive"]
             if self.transfer_type not in transfer_opts:
                 raise ValueError(
                     f"Transfer type {self.transfer_type} not in available options: {transfer_opts}"
                 )
+
+
 
     def num_outputs(self):
         """Multi-output model: primary output + secondary ANN output"""
@@ -255,7 +263,7 @@ class MultiStageModelBuilder(GRUBuilder2):
         """Handles model training in two stages: initial training and fine-tuning."""
 
         contrastive_target = fit_output[0] - fit_output[1]  # Precomputed contrast
-        contrast_weight = 1.
+        contrast_weight = self.contrast_weight if self.contrast_weight is not None else 1.0
 
         # ✅ Mask NaNs properly
         contrastive_target[np.isnan(fit_output[0]) | np.isnan(fit_output[1])] = np.nan
