@@ -1,7 +1,37 @@
 # Casanntra: Staged ANN Training for Simulation Model Surrogates
 
 ## Overview
-**Casanntra** is a utility designed for training surrogate models based on simulation outputs, with a primary focus on hydrodynamic and water quality models of the Bay-Delta system. The package supports **transfer learning** across a sequence of models and is structured around **deliberate design of experiments** for input cases. This approach enables more efficient learning, especially when high-dimensional models have limited training data.
+**Casanntra** is a utility designed for training surrogate models based on simulation outputs, with a primary focus on hydrodynamic and water quality models of the Bay-Delta system. The package supports **transfer learning** across a sequence of models and is structured around **deliberate design of experiments** for input cases. This approach enables more efficient learning, especially when high-dimensional models have limited training data. The library and its constituent data were developed jointly by DWR and Resource Management Associates (RMA) in a project funded and administered by the Delta Science Program. The full toolkit includes CalSim, the calsurrogate library that allows ANNs to plug into CalSim and casanntra the training platform. The workflow is approximated below.
+```mermaid
+
+%%{init: { "themeVariables": { "fontSize": "24px" } }}%%
+flowchart LR
+    subgraph Model Simulations 
+    doe[Design of experiments] ---> indsm2@{ shape: docs, label: "DSM2 Inputs"}
+	doe ---> inschism@{shape: docs, label: "SCHISM Inputs"}
+	doe ---> inrma@{shape: docs, label: "RMA Inputs"}
+    indsm2 ---> dsm2[DSM2]
+    inschism ---> schism[SCHISM]
+    inrma ---> rma[RMA]
+	dsm2 ---> cassdata@{shape: cyl, label: "casanntra\n/data"}
+	schism --->cassdata
+	rma ---> cassdata
+    end
+
+    subgraph ANN Training
+    cassdata ---> casanntra@{shape: rect, label: "cassantra \nANN training library\Python"}
+    casanntra --training--> tf[[TensorFlow 
+                     Saved Model]]
+    end
+
+    subgraph CalSim Application
+    tf --> calsur@{shape: rect, label: "calsurrogate\nJava library"}
+    wresl[WRESL new linearization] --revised--> CalSim
+    CalSim o--plugin jar--o calsur
+    wresl ---> calsur
+    end
+
+```	
 
 ## Core Concepts
 ### Data Model Terminology
@@ -10,7 +40,7 @@
 - **Case**: A distinct configuration of input conditions, typically representing a specific set of boundary conditions or forcing parameters in the simulation model. A given year may be represented by many cases each with a different perturbation. A case is the way we represent design of experiments (DOE).
 - **Cross-validation**: A strategy to maximize data utility by dividing cases into training and validation sets while ensuring temporal and case-based consistency. In cross-validation a `fold` is witheld.
 
-Further discussion of data inputs/outputs and sign conventions are discussed [here](data/readme.md)
+Further discussion of data inputs/outputs and sign conventions are discussed [here](data/readme.md). 
 
 ## Cross-Validation
 Higher-dimensional models often have limited training data due to computational constraints. To effectively assess model generalization, **K-fold cross-validation** is applied, ensuring:
