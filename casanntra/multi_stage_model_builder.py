@@ -26,16 +26,18 @@ class MultiStageModelBuilder(GRUBuilder2):
         """Allows builder_args to be updated dynamically between steps."""
         self.builder_args = builder_args
         self.transfer_type = builder_args.get("transfer_type", "direct")
+        if self.transfer_type == "None": 
+            self.transfer_type = None
 
         # ✅ Only load contrast_weight if contrastive mode is selected
         if self.transfer_type == "contrastive":
             self.contrast_weight = float(builder_args.get("contrast_weight", 1.0))
         else:
             self.contrast_weight = None  #  Prevents accidental use in non-contrastive cases
+        print("Transfer type: ",self.transfer_type)
+        print(self.transfer_type is None)
+        print(self.transfer_type == "None")
 
-        if self.transfer_type not in ["direct", "difference", "contrastive"]:
-            raise ValueError(f"Invalid transfer type: {self.transfer_type}")
-        
         if self.transfer_type is not None:
             transfer_opts = ["direct", "difference", "contrastive"]
             if self.transfer_type not in transfer_opts:
@@ -79,10 +81,10 @@ class MultiStageModelBuilder(GRUBuilder2):
             # Concatenate along the last axis to get shape (batch_size, ntime, nfeature)
             x = Concatenate(axis=-1,name="stacked")(expanded_inputs)
 
-            x = layers.LSTM(
-                units=32, return_sequences=True, activation="sigmoid", name="gru_1"
+            x = layers.LSTM(   # was LSTM 32
+                units=16, return_sequences=True, activation="sigmoid", name="gru_1"
             )(x)
-            feature_extractor = layers.LSTM(
+            feature_extractor = layers.LSTM(  # todo: was LSTM 16
                 units=16, return_sequences=False, activation="sigmoid", name="gru_2"
             )(x)
             input_layer = input_layers

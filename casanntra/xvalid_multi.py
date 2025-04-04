@@ -237,8 +237,10 @@ def xvalid_fit_multi(
         try:
             ifold = foldmap[future]
             test_pred = future.result()
+            print(f"Test prediction data type: {type(test_pred)}")
             # history = pickle.loads(base64.b64decode(history_encoded))
             test_in = inputs_lagged.loc[inputs_lagged.fold == ifold, :]
+            # Todo: This is a bit hack with all the switching logic
             if isinstance(outputs_xvalid, list):
                 print("\nUpdating master xvalidation data structure (multiple output version)")
                 for i in range(num_outputs):
@@ -260,10 +262,16 @@ def xvalid_fit_multi(
                             raise e
                     else:
                         outputs_xvalid[i].loc[test_in.index, output_list] = test_pred[i]
-            else:
+            elif isinstance(outputs_xvalid,pd.DataFrame):
+                if isinstance(test_pred,dict):
+                    if len(test_pred)>1:
+                        raise ValueError("Multiple outputs in single output model version")
+                    test_pred = list(test_pred.values())[0]
                 print("\nUpdating master xvalidation data structure (single output version)")
                 outputs_xvalid.loc[test_in.index, output_list] = test_pred
                 print("Done")
+            else: 
+                raise ValueError("Type of ")
         except Exception as err:
             print(f"Exception in (probably) in fold: {ifold}")
             traceback.print_tb(err.__traceback__)
