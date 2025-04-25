@@ -6,10 +6,11 @@
 # The user can selectively re-execute steps as needed.
 # ===========================
 
+output_dir: ./output  # Directory for saving output files
+
 model_builder_config:
   # Defines which ModelBuilder subclass is used.
   builder_name: MultiStageModelBuilder  # Uses a staged learning model
-
   args:
     input_names:  # Features (input variables)
       - northern_flow
@@ -55,8 +56,8 @@ steps:
   #input_mask_regex: None # [dsm2_base_9.\.csv, dsm2_base_100\.csv, dsm2_base_100.\.csv]  # Filters input files
   #input_mask_regex: [dsm2_base_100\.csv, dsm2_base_100.\.csv]  # Filters input files  
   input_mask_regex: [dsm2_base_100.\.csv]  # Filters input files    
-  output_prefix: dsm2_base_gru2  # Prefix for saved results
-  save_model_fname: dsm2_base_gru2  # Final model filename
+  output_prefix: "{output_dir}/dsm2_base_gru2"  # Prefix for saved results
+  save_model_fname: "{output_dir}/dsm2_base_gru2"  # Final model filename
   load_model_fname: None  # First model—no prior model to load
   pool_size: 12  # Number of parallel training threads
   pool_aggregation: True  # Use pool aggregation for large case counts
@@ -70,14 +71,13 @@ steps:
     ann_output_name: dsm2_base  # Name of output (applies if there is one output head, otherwise use ann_output_name_map)
     rnn_type: LSTM         # or GRU
     rnn_units: [32, 16]    # List defines layers: 2 layers with 32 and 16 units respectively
-
 # --------------------------------------------------------------
 - name: dsm2.schism  # Step 2: Transfer DSM2 Knowledge to SCHISM (3D Model)
   input_prefix: schism_base  # Points to SCHISM dataset (aligned with DSM2)
   input_mask_regex: None  # No need for filtering
-  output_prefix: dsm2.schism_base_gru2  # New model output filename
-  save_model_fname: dsm2.schism_base_gru2  # File to save the transfer-learned model
-  load_model_fname: dsm2_base_gru2  # Start from DSM2 model
+  output_prefix: "{output_dir}/dsm2.schism_base_gru2"  # New model output filename
+  save_model_fname: "{output_dir}/dsm2.schism_base_gru2"  # File to save the transfer-learned model
+  load_model_fname: "{output_dir}/dsm2_base_gru2"  # Start from DSM2 model
   pool_size: 12
   pool_aggregation: False
   target_fold_length: 180d
@@ -96,9 +96,9 @@ steps:
 - name: base.suisun  # Step 3: Transfer SCHISM (Base Scenario) to SCHISM (Suisun Scenario)
   input_prefix: schism_suisun  # Dataset for the Suisun scenario
   input_mask_regex: None
-  output_prefix: schism_base.suisun_gru2  # New model name
-  save_model_fname: schism_base.suisun_gru2  # Final model filename
-  load_model_fname: dsm2.schism_base_gru2  # Start from SCHISM (Base)
+  output_prefix: "{output_dir}/schism_base.suisun_gru2"  # New model name
+  save_model_fname: "{output_dir}/schism_base.suisun_gru2"  # Final model filename
+  load_model_fname: "{output_dir}/dsm2.schism_base_gru2"  # Start from SCHISM (Base)
   pool_size: 12
   pool_aggregation: False
   target_fold_length: 180d

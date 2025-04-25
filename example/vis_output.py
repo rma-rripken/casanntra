@@ -36,9 +36,9 @@ def load_data(model: str, station: str):
     if output_prefix is None:
         raise ValueError(f"Invalid model: {model}")
 
-    ref_out_fname = f"{output_prefix}_xvalid_ref_out_scaled.csv"
+    ref_out_fname = f"{output_prefix}_xvalid_ref_out_unscaled.csv"
     if model == "base.suisun-secondary":
-        ref_out_fname = f"{output_prefix}_xvalid_ref_out_secondary_scaled.csv"
+        ref_out_fname = f"{output_prefix}_xvalid_ref_out_secondary_unscaled.csv"
 
     print("ref", ref_out_fname)
     model_data = pd.read_csv(
