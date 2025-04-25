@@ -6,6 +6,8 @@
 # The user can selectively re-execute steps as needed.
 # ===========================
 
+output_dir: ./output  # Directory for saving output files
+
 model_builder_config:
   # Defines which ModelBuilder subclass is used.
   builder_name: MultiStageModelBuilder  # Uses a staged learning model
@@ -18,14 +20,17 @@ model_builder_config:
       - smscg
     output_names:  # Output variables with their scaling factors
       x2: 100.0    # Normalized based on known physical ranges
-      pct: 12000.0
-      mal: 12000.0  # 2
+      mrz: 30000.0
+      pct: 20000.0
+      mal: 15000.0  # 2
       bdl: 12000.0  # 5
       cse: 12000.0
       emm2: 3000.0
-      anh: 3000.0
+      anh: 6000.0
       jer: 2500.0
-      gzl: 12000.0   #12
+      gzl: 20000.0   #12
+
+
     ndays: 90  # Defines the time window for GRU model
 
 # ===========================
