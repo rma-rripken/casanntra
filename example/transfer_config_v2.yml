@@ -55,7 +55,7 @@ steps:
   input_prefix: dsm2_base  # Points to DSM2 training data
   #input_mask_regex: None # [dsm2_base_9.\.csv, dsm2_base_100\.csv, dsm2_base_100.\.csv]  # Filters input files
   #input_mask_regex: [dsm2_base_100\.csv, dsm2_base_100.\.csv]  # Filters input files  
-  input_mask_regex: [dsm2_base_100.\.csv]  # Filters input files    
+  input_mask_regex: [dsm2_base_100.\.csv,dsm2_base_historical\.csv]  # Filters input files    
   output_prefix: "{output_dir}/dsm2_base_gru2"  # Prefix for saved results
   save_model_fname: "{output_dir}/dsm2_base_gru2"  # Final model filename
   load_model_fname: None  # First model—no prior model to load

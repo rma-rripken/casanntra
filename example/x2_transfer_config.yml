@@ -42,7 +42,7 @@ model_builder_config:
 steps:
 - name: x2_dsm2_base  # Step 1: Train DSM2 (1D Model) on its original dataset
   input_prefix: dsm2_base  # Points to DSM2 training data
-  input_mask_regex: [] #[dsm2_base_100.\.csv]  # Filters input files    
+  input_mask_regex: [dsm2_base_100.\.csv,dsm2_base_historical\.csv]  #[dsm2_base_100.\.csv]  # Filters input files    
   output_prefix: x2_dsm2_base_gru2  # Prefix for saved results
   save_model_fname: x2_dsm2_base_gru2  # Final model filename
   load_model_fname: None  # First model—no prior model to load
