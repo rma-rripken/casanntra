@@ -90,7 +90,7 @@ steps:
     save_modified_orig_model_fname: None  # No need to modify the DSM2 model
     ann_output_name: schsim_base
     rnn_type: LSTM         # or GRU
-    rnn_units: [32, 16]    # List defines layers: 2 layers with 32 and 16 units respectively    
+    rnn_units: [32, 16]    # List defines layers: 2 layers with 32 and 16 units respectively
 
 # --------------------------------------------------------------
 - name: base.suisun  # Step 3: Transfer SCHISM (Base Scenario) to SCHISM (Suisun Scenario)
@@ -112,5 +112,95 @@ steps:
     transfer_type: contrastive  # Use contrastive learning to retain differences
     contrast_weight: 0.5 
     save_modified_orig_model_fname: schism_base-suisun_gru2  # Keep modified version of SCHISM (Base)
+    rnn_type: LSTM         # or GRU
+    rnn_units: [32, 16]    # List defines layers: 2 layers with 32 and 16 units respectively
+
+# --------------------------------------------------------------
+- name: dsm2.rma  # Step 2: Transfer DSM2 Knowledge to RMA
+  input_prefix: rma_base  # Points to RMA dataset (aligned with DSM2)
+  input_mask_regex: None  # No need for filtering
+  output_prefix: "{output_dir}/dsm2.rma_base_gru2"  # New model output filename
+  save_model_fname: "{output_dir}/dsm2.rma_base_gru2"  # File to save the transfer-learned model
+  load_model_fname: "{output_dir}/dsm2_base_gru2"  # Start from DSM2 model
+  pool_size: 12
+  pool_aggregation: False
+  target_fold_length: 180d
+  init_train_rate: 0.003  # Medium learning rate, helpful but tune down if you see catostrophic forgetting (see docs)
+  init_epochs: 11  # Transfer learning often requires fewer epochs was 10 then 35
+  main_train_rate: 0.001  # Only a single training phase
+  main_epochs: 61  # No separate main training phase was 25
+  builder_args:
+    transfer_type: direct  # Standard transfer learning
+    save_modified_orig_model_fname: None  # No need to modify the DSM2 model
+    ann_output_name: rma_base
+    rnn_type: LSTM         # or GRU
+    rnn_units: [32, 16]    # List defines layers: 2 layers with 32 and 16 units respectively
+
+# --------------------------------------------------------------
+- name: rma_base.suisun  # Step 3: Transfer RMA (Base Scenario) to RMA (Suisun Scenario)
+  input_prefix: rma_suisun  # Dataset for the Suisun scenario
+  input_mask_regex: None
+  output_prefix: "{output_dir}/rma_base.suisun_gru2"  # New model name
+  save_model_fname: "{output_dir}/rma_base.suisun_gru2"  # Final model filename
+  load_model_fname: "{output_dir}/dsm2.rma_base_gru2"  # Start from RMA (Base)
+  pool_size: 12
+  pool_aggregation: False
+  target_fold_length: 180d
+  init_train_rate: 0.001  # Even lower learning rate for fine-tuning
+  init_epochs: 12 # Short fine-tuning phase
+  main_train_rate: 0.0005  # Main learning rate for adaptation
+  main_epochs: 62  # Extended training for scenario adaptation
+  builder_args:
+    source_data_prefix: rma_base
+    source_input_mask_regex: [rma_base_*.csv ]
+    transfer_type: contrastive  # Use contrastive learning to retain differences
+    contrast_weight: 0.5
+    save_modified_orig_model_fname: rma_base-suisun_gru2  # Keep modified version of RMA (Base)
+    rnn_type: LSTM         # or GRU
+    rnn_units: [32, 16]    # List defines layers: 2 layers with 32 and 16 units respectively
+
+# --------------------------------------------------------------
+- name: rma_base.ft  # Step 3: Transfer RMA (Base Scenario) to RMA (Franks Tract Scenario)
+  input_prefix: rma_ft  # Dataset for the Franks scenario
+  input_mask_regex: None
+  output_prefix: "{output_dir}/rma_base.ft_gru2"  # New model name
+  save_model_fname: "{output_dir}/rma_base.ft_gru2"  # Final model filename
+  load_model_fname: "{output_dir}/dsm2.rma_base_gru2"  # Start from RMA (Base)
+  pool_size: 12
+  pool_aggregation: False
+  target_fold_length: 180d
+  init_train_rate: 0.001  # Even lower learning rate for fine-tuning
+  init_epochs: 12 # Short fine-tuning phase
+  main_train_rate: 0.0005  # Main learning rate for adaptation
+  main_epochs: 62  # Extended training for scenario adaptation
+  builder_args:
+    source_data_prefix: rma_base
+    source_input_mask_regex: [rma_base_*.csv ]
+    transfer_type: contrastive  # Use contrastive learning to retain differences
+    contrast_weight: 0.5
+    save_modified_orig_model_fname: rma_base-ft_gru2  # Keep modified version of RMA (Base)
+    rnn_type: LSTM         # or GRU
+    rnn_units: [32, 16]    # List defines layers: 2 layers with 32 and 16 units respectively
+
+# --------------------------------------------------------------
+- name: rma_base.cache  # Step 3: Transfer RMA (Base Scenario) to RMA (Cache Scenario)
+  input_prefix: rma_cache  # Dataset for the Cache scenario
+  input_mask_regex: None
+  output_prefix: "{output_dir}/rma_base.cache_gru2"  # New model name
+  save_model_fname: "{output_dir}/rma_base.cache_gru2"  # Final model filename
+  load_model_fname: "{output_dir}/dsm2.rma_base_gru2"  # Start from RMA (Base)
+  pool_size: 12
+  pool_aggregation: False
+  target_fold_length: 180d
+  init_train_rate: 0.001  # Even lower learning rate for fine-tuning
+  init_epochs: 12 # Short fine-tuning phase
+  main_train_rate: 0.0005  # Main learning rate for adaptation
+  main_epochs: 62  # Extended training for scenario adaptation
+  builder_args:
+    source_data_prefix: rma_base
+    source_input_mask_regex: [rma_base_*.csv ]
+    transfer_type: contrastive  # Use contrastive learning to retain differences
+    contrast_weight: 0.5
+    save_modified_orig_model_fname: rma_base-cache_gru2  # Keep modified version of RMA (Base)
     rnn_type: LSTM         # or GRU
     rnn_units: [32, 16]    # List defines layers: 2 layers with 32 and 16 units respectively
