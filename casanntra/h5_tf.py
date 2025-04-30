@@ -8,12 +8,12 @@ from casanntra.staged_learning import read_config, model_builder_from_config
 from casanntra.model_builder import masked_mae, masked_mse, ScaledMaskedMAE, ScaledMaskedMSE
 
 def convert_model(h5_model_name, config_path):
-    # ✅ Parse config and get output_dir
+    # Parse config and get output_dir
     config_data = read_config(config_path)
     output_dir = config_data.get("output_dir", "./output")
     os.makedirs(output_dir, exist_ok=True)
 
-    # ✅ Resolve full H5 model path
+    # Resolve full H5 model path
     if os.path.isabs(h5_model_name) or h5_model_name.startswith(output_dir):
         h5_model_path = h5_model_name
     else:
@@ -27,7 +27,7 @@ def convert_model(h5_model_name, config_path):
     builder = model_builder_from_config(config_data["model_builder_config"])
     output_scales = list(builder.output_names.values())
 
-    # ✅ Register custom objects
+    # Register custom objects
     custom_objects = {
         "UnscaleLayer": UnscaleLayer,
         "StackLayer": StackLayer,
@@ -45,25 +45,22 @@ def convert_model(h5_model_name, config_path):
     weights_path = h5_model_path.replace(".h5", ".weights.h5")
     if os.path.exists(weights_path):
         model.load_weights(weights_path)
-        print(f"✅ Weights loaded from: {weights_path}")
+        print(f"Weights loaded from: {weights_path}")
     else:
-        print(f"⚠ No separate weights file found at {weights_path} (proceeding with compiled model).")
+        print(f"No separate weights file found at {weights_path} (proceeding with compiled model).")
 
     print("🔍 Original model loaded:")
     model.summary()
 
-    # ✅ Wrap the model in UnscaleLayer
-    #model = builder.wrap_with_unscale_layer(model)
-
-    # ✅ Compile to preserve named outputs
+    # Compile to preserve named outputs
     model.compile()
 
-    # ✅ Save as TensorFlow SavedModel to output_dir
+    # Save as TensorFlow SavedModel to output_dir
     base_name = os.path.splitext(os.path.basename(h5_model_path))[0]
     save_path = os.path.join(output_dir, base_name)
     model.save(save_path, save_format="tf")
 
-    print(f"✅ Converted model saved to: {save_path}")
+    print(f"Converted model saved to: {save_path}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convert an H5 model to TensorFlow SavedModel format using config-defined output_dir.")
