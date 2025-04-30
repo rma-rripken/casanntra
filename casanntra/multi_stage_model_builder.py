@@ -81,10 +81,10 @@ class MultiStageModelBuilder(GRUBuilder2):
             # Concatenate along the last axis to get shape (batch_size, ntime, nfeature)
             x = Concatenate(axis=-1,name="stacked")(expanded_inputs)
 
-            x = layers.LSTM(   # was LSTM 32
-                units=16, return_sequences=True, activation="sigmoid", name="gru_1"
+            x = layers.GRU(   # was LSTM 32
+                units=32, return_sequences=True, activation="sigmoid", name="gru_1"
             )(x)
-            feature_extractor = layers.LSTM(  # todo: was LSTM 16
+            feature_extractor = layers.GRU(  # todo: was LSTM 16
                 units=16, return_sequences=False, activation="sigmoid", name="gru_2"
             )(x)
             input_layer = input_layers
