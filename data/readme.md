@@ -13,7 +13,9 @@ These are the conventions as per CalSim ANN training.
 | sac_flow         | Sacramento River inflow at I St - includes American River upstream (cfs) |
 | sjr_flow         | San Joaquin River inflow at Vernalis (cfs) |
 | exports          | Banks + Jones + CCC Rock Slough + CCC Middle/Old + CCC Victoria (cfs)|
-| delta_cu         | Net Delta Consumptive Use (cfs) |
+| cu_total         | Net Delta Consumptive Use, for SCHISM includes evaporation (cfs) |
+| cu_delta         | Net Delta Consumptive Use only in Delta, for SCHISM includes evaporation (cfs) |
+| cu_suisun        | Net Delta Consumptive Use only in Suisun, for SCHISM includes evaporation(cfs) |
 | ndo              | Net Delta Outflow as calculated by boundary inflows (cfs) |
 | dcc              | Delta Cross Channel gate operations (0=Closed, 1=Open) |
 | smscg            | Suisun Marsh Salinity Control Gate operations (0=Open, 1=Tidally Operated) |
