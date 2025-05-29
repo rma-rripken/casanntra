@@ -9,11 +9,14 @@ dependencies:
   - ipykernel
   #- tensorflow==2.7.4               #Install after using pip. See commented command below
   - vtools3>=3.7.5
-  - dms-datastore>=0.1.0 
-  - numpy>=1.20,<2  
-  - pandas>=2    
+  - dms-datastore>=0.1.0
+  - # numpy 1.21 needs pandas 1.4
+  #- numpy==1.20.3,<2
+#  - numpy==1.26.4
+  - numpy>=1.22.4,<1.23
+  - pandas>=2     # pandas 2.0 needs at least numpy 1.22.4
   - scikit-learn
-  - keras
+ # - keras  # probably don't install this b/c when we install tensorflow using pip its just going to have to uninstall it
   #- keras-tuner                     # Install afterwards using pip. See commented command below
   - tabulate
   - pandas

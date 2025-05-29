@@ -10,9 +10,13 @@ OUTPUT_PREFIXES = {
     "dsm2.schism": "dsm2.schism_base_gru2",
     "schism_base.suisun": "schism_base.suisun_gru2",
     "schism_base.suisun-secondary": "schism_base.suisun_gru2",
+    "schism_base.slr": "schism_base.slr_gru2",
+    "schism_base.ft": "schism_base.ft_gru2",
     "dsm2.rma": "dsm2.rma_base_gru2",
     "rma_base.suisun": "rma_base.suisun_gru2",
     "rma_base.suisun-secondary": "rma_base.suisun_gru2",
+    "rma_base.cache": "rma_base.cache_gru2",
+    "rma_base.ft": "rma_base.ft_gru2",
 }
 
 # Mapping of station short names to full names
@@ -147,6 +151,15 @@ if __name__ == "__main__":
     """Main execution function to parse user input and generate plots."""
     # station = sys.argv[1] if len(sys.argv) > 1 else "x2"
     # models = sys.argv[2:] if len(sys.argv) > 2 else ["dsm2"]
-    models_to_compare = ["rma_base.suisun", "schism_base.suisun"]
-    vis_all_stations(models_to_compare)
 
+    for compare_to in ["suisun", "cache", 'ft']:
+        models_to_compare = ["dsm2.rma", f"rma_base.{compare_to}"]
+        vis_all_stations(models_to_compare)
+
+    for compare_to in ["suisun", 'ft']:
+        models_to_compare = [f"rma_base.{compare_to}", f"schism_base.{compare_to}"]
+        vis_all_stations(models_to_compare)
+
+    for compare_to in ["suisun", "ft", "slr"]:
+        models_to_compare = ["dsm2.schism", f"schism_base.{compare_to}"]
+        vis_all_stations(models_to_compare)
