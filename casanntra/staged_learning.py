@@ -24,22 +24,21 @@ model_builders = {
 }
 
 
-
 def fit_from_config(
     builder,
     name,
-    input_prefix,  
+    input_prefix,
     output_prefix,
-    input_mask_regex,  
-    save_model_fname,  
-    load_model_fname,  
-    pool_size,  
-    target_fold_length,  
-    pool_aggregation,  
-    init_train_rate,  
-    init_epochs,  
-    main_train_rate,  
-    main_epochs,  
+    input_mask_regex,
+    save_model_fname,
+    load_model_fname,
+    pool_size,
+    target_fold_length,
+    pool_aggregation,
+    init_train_rate,
+    init_epochs,
+    main_train_rate,
+    main_epochs,
 ):
     """
     Fits a machine learning model using staged training and cross-validation.
@@ -89,7 +88,7 @@ def fit_from_config(
     --------
     >>> builder = GRUBuilder2(...)
     >>> fit_from_config(
-    ...     builder, 
+    ...     builder,
     ...     name="my_model",
     ...     input_prefix="dataset",
     ...     output_prefix="results",
@@ -170,10 +169,10 @@ def fit_from_config(
             df_out[1]["fold"] = df_out[1]["fold"] % pool_size
 
     # ✅ Scale outputs. Works for single df or list
-    #df_out = scale_output(df_out, builder.output_names)
+    # df_out = scale_output(df_out, builder.output_names)
 
     # ✅ Write scaled reference outputs, works for single dataframe or list
-    #write_reference_outputs(output_prefix, df_out, builder, is_scaled=True)
+    # write_reference_outputs(output_prefix, df_out, builder, is_scaled=True)
 
     # Perform cross-validation fitting (safe within multiprocessing)
     xvalid_fit_multi(
@@ -287,6 +286,11 @@ def process_config(configfile, proc_steps):
             for key in step:
                 if step[key] == "None":
                     step[key] = None
+
+            # 🔁 Replace {output_dir} placeholders
+            for key in ["save_model_fname", "load_model_fname", "output_prefix"]:
+                if key in step and isinstance(step[key], str):
+                    step[key] = step[key].replace("{output_dir}", config["output_dir"])
 
             # ✅ Remove `builder_args` before passing to fit_from_config()
             step_filtered = {k: v for k, v in step.items() if k != "builder_args"}
