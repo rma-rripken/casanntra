@@ -85,7 +85,7 @@ steps:
   builder_args:
     transfer_type: direct  # Standard transfer learning
     save_modified_orig_model_fname: None  # No need to modify the DSM2 model
-    ann_output_name: schsim_base
+    ann_output_name: schism_base
 
 # --------------------------------------------------------------
 - name: base.suisun  # Step 3: Transfer SCHISM (Base Scenario) to SCHISM (Suisun Scenario)
