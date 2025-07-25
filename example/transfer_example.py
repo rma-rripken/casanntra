@@ -12,7 +12,7 @@ def main():
     My visualization of the cross validation output is vis_output.py.
     It is in much more rudimentary state.
     """
-    configfile = "transfer_config_v2.yml"
+    configfile = "transfer_config_schism_v4.yml"
 
     # This selects the steps you want to run
     process_config(configfile, ["dsm2_base"])
@@ -21,5 +21,6 @@ def main():
 
 
 if __name__ == "__main__":
+
     mp.set_start_method("spawn", force=True)
     main()
